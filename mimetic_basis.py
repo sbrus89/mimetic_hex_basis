@@ -1,5 +1,6 @@
 import numpy as np
 import matplotlib.pyplot as plt
+import random
 from shapely.geometry.polygon import Polygon
 from shapely.geometry import Point
 
@@ -23,7 +24,7 @@ def area(x, y, x1, y1, x2, y2):
     A = A.reshape(x.shape)
     return A
 
-def vector_basis(n, i, v, phi):
+def vector_basis(n, i, v, phi, norm_factor=1.0):
 
     ip1 = (i+1) % n
     ip2 = (i+2) % n
@@ -38,11 +39,19 @@ def vector_basis(n, i, v, phi):
     #Phix = 1.0/J*v[i,0]*(0*phi[i,:,:] + 1)
     #Phiy = 1.0/J*v[i,1]*(0*phi[i,:,:] + 1)
 
-    # This works for faces, but uses phi i+2
-    Ji   = v[i,0]*v[ip1,1] - v[ip1,0]*v[i,1]
-    Jip1 = v[ip1,0]*v[ip2,1] - v[ip2,0]*v[ip1,1]
-    Phix = 1.0/Ji*v[i,0]*phi[ip1,:,:] + 1.0/Jip1*v[ip1,0]*phi[i,:,:]
-    Phiy = 1.0/Ji*v[i,1]*phi[ip1,:,:] + 1.0/Jip1*v[ip1,1]*phi[i,:,:]
+    ## Edge tangents
+    #Phix = (v[i,0] - v[i-1,0])*(0*phi[i,:,:] + 1)
+    #Phiy = (v[i,1] - v[i-1,1])*(0*phi[i,:,:] + 1)
+
+    ## This works for hex faces, but uses phi i+2
+    #Ji   = v[i,0]*v[ip1,1] - v[ip1,0]*v[i,1]
+    #Jip1 = v[ip1,0]*v[ip2,1] - v[ip2,0]*v[ip1,1]
+    #Phix = 1.0/Ji*v[i,0]*phi[ip1,:,:] + 1.0/Jip1*v[ip1,0]*phi[i,:,:]
+    #Phiy = 1.0/Ji*v[i,1]*phi[ip1,:,:] + 1.0/Jip1*v[ip1,1]*phi[i,:,:]
+
+    ## This works for general cases
+    Phix = (v[i,0] - v[i-1,0])*phi[i,:,:] + (v[ip1,0] - v[ip2,0])*phi[ip1,:,:]
+    Phiy = (v[i,1] - v[i-1,1])*phi[i,:,:] + (v[ip1,1] - v[ip2,1])*phi[ip1,:,:]
 
     #Phix = phi[ip1,:,:] + phi[i,:,:]
     #Phiy = phi[ip1,:,:] + phi[i,:,:]
@@ -51,7 +60,7 @@ def vector_basis(n, i, v, phi):
     # Phix = phix[ip1,:,:]*phi[i,:,:]
     # Phiy = phiy[ip1,:,:]*phi[i,:,:]
 
-    return Phix, Phiy
+    return Phix/norm_factor, Phiy/norm_factor
 
 def wachpress(n,xx,yy,method='area'):
 
@@ -105,21 +114,26 @@ def wachpress(n,xx,yy,method='area'):
 #######################################################################
 #######################################################################
 
-n = 6
+n = 6      # Number of polygon sides
+eps = 0.0  # Factor to perturb polygon vertices
+nx = 300   # Number of points in x direction 
+ny = 300   # Number of points in y direction
+nt = 1000  # Number of quadrature points along an edge
+N = 10     # Quiver plot subsample factor
 
 # Create vertices
 drad = 2.0*np.pi/float(n)
 v = []
 for i in range(n):
     rad = i*drad
-    v.append([np.cos(rad), np.sin(rad)])
+    dx = random.uniform(0.0,1.0)
+    dy = random.uniform(0.0,1.0)
+    v.append([np.cos(rad) + eps*dx, np.sin(rad) + eps*dy])
 v = np.asarray(v)
 
 # Generate x,y coordinates
-nx = 300 
-ny = 300
-x = np.linspace(-1.0, 1.0, nx)
-y = np.linspace(-1.0, 1.0, ny)
+x = np.linspace(-1.0+eps, 1.0+eps, nx)
+y = np.linspace(-1.0+eps, 1.0+eps, ny)
 xx, yy = np.meshgrid(x, y)
 xy = np.vstack((xx.ravel(), yy.ravel())).T
 mask = np.array(xx.ravel(),dtype='bool')
@@ -146,7 +160,11 @@ phi[:,~mask] = np.nan
 phi_area[:,~mask] = np.nan
 
 # Ensure both distance and area methods are equivalent
-print(np.nanmax(np.abs(phi-phi_area)))
+diff = np.nanmax(np.abs(phi-phi_area))
+if diff > 1e-15:
+    print("Distance and area methods do not agree")
+    print(diff)
+    raise SystemExit(0)
 
 # Compute gradients
 phix = np.zeros((n,xx.shape[0],xx.shape[1]))
@@ -163,7 +181,6 @@ for i in range(n):
     phiy[i,:,:] = phi[i,:,:]*(ry[i,:,:] - sy)
 
 # Plot Wachpress coordinates
-N = 10
 fig,ax = plt.subplots(3,3, figsize=(16,12))
 ax = ax.reshape(-1)
 for i in range(n):
@@ -198,16 +215,14 @@ for i in range(n):
 
     Phix, Phiy = vector_basis(n, i, v, phi)
 
-    N = 5 
     ax[i].quiver(xx[::N,::N],yy[::N,::N],Phix[::N,::N],Phiy[::N,::N])
-    ax[i].quiver(0.5*(v[i,0]+v[ip1,0]), 0.5*(v[i,1]+v[ip1,1]), norm[i,0], norm[i,1])
+    #ax[i].quiver(0.5*(v[i,0]+v[ip1,0]), 0.5*(v[i,1]+v[ip1,1]), norm[i,0], norm[i,1])
     ax[i].axis('equal')
 
 fig.tight_layout()
 plt.savefig('edge.png',bbox_inches='tight')
 
 # Compute line integral quadrature points
-nt = 1000
 x = np.zeros((nt-1,n))
 y = np.zeros((nt-1,n))
 dx = np.zeros((nt-1,n))
@@ -234,16 +249,38 @@ for i in range(n):
     nx[:,i] = norm[i,0]
     ny[:,i] = norm[i,1]
 
-    #ds[:,i] = np.sqrt(np.square(dx[:,i]) + np.square(dy[:,i]))
-    ds[:,i] = np.sqrt(np.square(v[i,0]) + np.square(v[i,1]))*dt
+    ds[:,i] = np.sqrt(np.square(dx[:,i]) + np.square(dy[:,i]))
 
 # Compute line integrals
 phi = wachpress(n, x, y, method='area')
+norm_factors = np.zeros(n)
 for i in range(n):
 
     ip1 = (i+1) % n
-    Phix, Phiy = vector_basis(n, i, v, phi)
+    ip2 = (i+2) % n
 
+    Phix, Phiy = vector_basis(n, i, v, phi)
+    integral = np.sum((Phix*nx + Phiy*ny)*ds, axis=0)
+    integral[integral < 1e-15] = 0.0
+    norm_factors[i] = integral[i]
+    #print(integral)
+
+    xip1 = v[ip1,0]
+    xi = v[i,0]
+    xip2 = v[ip2,0]
+    xim1 = v[i-1,0]
+
+    yip1 = v[ip1,1]
+    yi = v[i,1]
+    yip2 = v[ip2,1]
+    yim1 = v[i-1,1]
+
+    edge_integral = 0.5*(yip1-yi)*((xi-xim1)+(xip1-xip2)) - 0.5*(xip1-xi)*((yi-yim1)+(yip1-v[ip2,1]))
+    print(edge_integral)
+
+    
+    Phix, Phiy = vector_basis(n, i, v, phi, edge_integral)
     integral = np.sum((Phix*nx + Phiy*ny)*ds, axis=0)
     integral[integral < 1e-15] = 0.0
     print(integral)
+
