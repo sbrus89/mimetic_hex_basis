@@ -154,8 +154,8 @@ for i in range(n):
 v = np.asarray(v)
 
 # Generate x,y coordinates
-x = np.linspace(-1.0+eps, 1.0+eps, Nx)
-y = np.linspace(-1.0+eps, 1.0+eps, Ny)
+x = np.linspace(-1.0-eps, 1.0+eps, Nx)
+y = np.linspace(-1.0-eps, 1.0+eps, Ny)
 dx = x[1]-x[0]
 dy = y[1]-y[0]
 xx, yy = np.meshgrid(x, y)
