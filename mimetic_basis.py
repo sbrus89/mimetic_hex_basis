@@ -5,6 +5,8 @@ from shapely.geometry.polygon import Polygon
 from shapely.geometry import Point
 
 np.seterr(divide='ignore', invalid='ignore')
+ 
+R = 6356.0*1000.0
 
 def area(x, y, x1, y1, x2, y2):
 
@@ -128,6 +130,73 @@ def parameterize_line(t, xi, yi, xip1, yip1):
     ds = np.sqrt(np.square(xip1-xi) + np.square(yip1-yi))*dt
 
     return x, y, nx, ny, ds
+
+def gnomonic_forward(lon, lat, lon0, lat0):
+
+    cos_alpha = np.sin(lat0)*np.sin(lat) + np.cos(lat0)*np.cos(lat)*np.cos(lon-lon0)
+
+    u = R*np.cos(lat)*np.sin(lon-lon0)/cos_alpha
+    v = R*(np.cos(lat0)*np.sin(lat) - np.sin(lat0)*np.cos(lat)*np.cos(lon-lon0))/cos_alpha
+
+    return u, v
+
+def gnomonic_inverse(u, v, lon0, lat0):
+
+    rho = np.sqrt(u**2 + v**2)
+    alpha = np.arctan2(rho,R)
+
+    lat = np.arcsin(np.cos(alpha)*np.sin(lat0) + v*np.sin(alpha)*np.cos(lat0)/rho)
+    lon = lon0 + np.arctan2(u*np.sin(alpha), rho*np.cos(lat0)*np.cos(alpha) - v*np.sin(lat0)*np.sin(alpha)) 
+
+    return lon, lat
+
+def gnomonic_integration(lon0, lat0, lon1, lat1, lon2, lat2, t):
+
+
+    u1, v1 = gnomonic_forward(lon1, lat1, lon0, lat0)
+    u2, v2 = gnomonic_forward(lon2, lat2, lon0, lat0)
+
+    u = t*u2 + (1.0-t)*u1
+    v = t*v2 + (1.0-t)*v1
+
+    lon, lat = gnomonic_inverse(u, v, lon0, lat0)
+
+    dudt = u2 - u1
+    dvdt = v2 - v1
+
+    dxdlat = -R*np.sin(lat)*np.cos(lon)
+    dxdlon = -R*np.cos(lat)*np.sin(lon)
+
+    dydlat = -R*np.sin(lat)*np.sin(lon)
+    dydlon =  R*np.cos(lat)*np.cos(lon)
+
+    dzdlat = R*np.cos(lat)
+    dzdlon = 0.0
+
+    k = 1.0 + (u**2 + v**2)/R**2
+    rho = np.sqrt(u**2 + v**2)
+
+    den = u**2 + (R*np.cos(lat0) - v*np.sin(lat0))**2
+    dlondu = (R*np.cos(lat0) - v*np.sin(lat0))/den 
+    dlondv = u*np.sin(lat0)/den
+
+    den = R**3*k**(3.0/2.0)*np.sqrt(1.0 - (v*np.cos(lat0) + R*np.sin(lat0))**2/(R**2*k)) 
+    dlatdu = -u*(v*np.cos(lat0) + R*np.sin(lat0))/den
+    dlatdv = ((R**2 + u**2)*np.cos(lat0) - R*v*np.sin(lat0))/den
+
+    dlatdt = dlatdu*dudt + dlatdv*dvdt 
+    dlondt = dlondu*dudt + dlondv*dvdt
+
+    dxdt = dxdlat*dlatdt + dxdlon*dlondt
+    dydt = dydlat*dlatdt + dydlon*dlondt
+    dzdt = dzdlat*dlatdt + dzdlon*dlondt
+
+    ds = np.sqrt(np.square(dxdt) + np.square(dydt) + np.square(dzdt))
+    dt = t[1] - t[0]
+
+    L = np.sum(ds)*dt
+
+    return L
 
 #######################################################################
 #######################################################################
@@ -479,3 +548,36 @@ print(line_integral)
 print("Total area integral")
 print(area_integral)
 
+
+############################################
+# Spherical line integration
+############################################
+
+# New York
+lon1 = -74.006 
+lat1 = 40.7128
+
+# London
+lon2 = -0.1276
+lat2 = 51.5072
+
+## Washington DC
+#lon2 = -77.0369
+#lat2 = 38.9072
+
+lon1 = np.radians(lon1)
+lat1 = np.radians(lat1)
+
+lon2 = np.radians(lon2)
+lat2 = np.radians(lat2)
+
+lon0 = 0.5*(lon1 + lon2)
+lat0 = 0.5*(lat1 + lat2)
+t = np.linspace(0.0, 1.0, 200000)
+
+L =  gnomonic_integration(lon0, lat0, lon1, lat1, lon2, lat2, t)
+print(L/1000.0)
+
+hav = np.sin(0.5*(lat2-lat1))**2 + np.cos(lat1)*np.cos(lat2)*np.sin(0.5*(lon2-lon1))**2
+d = 2.0*R*np.arcsin(np.sqrt(hav))
+print(d/1000.0)
