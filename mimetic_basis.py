@@ -134,10 +134,13 @@ def parameterize_line(t, xi, yi, xip1, yip1):
 
 n = 6      # Number of polygon sides
 eps = 0.0  # Factor to perturb polygon vertices
-Nx = 400   # Number of points in x direction 
-Ny = 400   # Number of points in y direction
+Nx = 300   # Number of points in x direction 
+Ny = 300   # Number of points in y direction
 nt = 101   # Number of quadrature points along an edge
-N = 15     # Quiver plot subsample factor
+N = int(Nx/30) # Quiver plot subsample factor
+ncols = 3
+nrows = int(np.ceil(n/ncols))
+figsize = (16,4*nrows)
 
 ############################################
 # Define polygon
@@ -211,7 +214,7 @@ for i in range(n):
     phiy[i,:,:] = phi[i,:,:]*(ry[i,:,:] - sy)
 
 # Plot Wachpress coordinates
-fig,ax = plt.subplots(3,3, figsize=(16,12))
+fig,ax = plt.subplots(nrows, ncols, figsize=figsize)
 ax = ax.reshape(-1)
 for i in range(n):
 
@@ -233,22 +236,28 @@ plt.savefig('hex.png',bbox_inches='tight')
 ############################################
 
 # Plot vector basis functions
-fig,ax = plt.subplots(3,3, figsize=(16,12))
+fig,ax = plt.subplots(nrows, ncols, figsize=figsize)
 ax = ax.reshape(-1)
 
 for i in range(n):
 
     ip1 = (i+1) % n
 
-    for j in range(n):
-        jp1 = (j+1) % n
-        ax[i].scatter(v[j,0], v[j,1])
-        ax[i].plot([v[j,0], v[jp1,0]], [v[j,1], v[jp1,1]])
-
     Phix, Phiy = vector_basis(n, i, v, phi)
 
+    cr = np.linspace(0,1.0,10)
+    c = ax[i].contourf(xx, yy, np.sqrt(np.square(Phix)+np.square(Phiy)), cr)
+    cbar = fig.colorbar(c)
     ax[i].quiver(xx[::N,::N],yy[::N,::N],Phix[::N,::N],Phiy[::N,::N])
     ax[i].quiver(0.5*(v[i,0]+v[ip1,0]), 0.5*(v[i,1]+v[ip1,1]), norm[i,0], norm[i,1])
+
+    for j in range(n):
+        jp1 = (j+1) % n
+        ax[i].plot([v[j,0], v[jp1,0]], [v[j,1], v[jp1,1]])
+
+    for j in range(n):
+        ax[i].scatter(v[j,0], v[j,1])
+
     ax[i].axis('equal')
 
 fig.tight_layout()
@@ -313,7 +322,7 @@ for i in range(n):
 
 # Compute area integral of divergence
 print("Area integral of divergence over polygon")
-fig,ax = plt.subplots(3,3, figsize=(16,12))
+fig,ax = plt.subplots(nrows, ncols, figsize=figsize)
 ax = ax.reshape(-1)
 
 phi, rx, ry = wachpress(n, v, xx, yy, method='distance')
@@ -365,9 +374,11 @@ v2[2,:] = v[2,:]
 v2[3,:] = v[3,:]
 v2[4,:] = (1.0-s)*v[3,:] + s*v[4,:]
 
-fig,ax = plt.subplots(3,3, figsize=(16,12))
+fig,ax = plt.subplots(nrows, ncols, figsize=figsize)
 ax = ax.reshape(-1)
 
+line_integral = 0.0
+area_integral = 0.0
 for k in range(2):
 
     if k == 0:
@@ -410,6 +421,7 @@ for k in range(2):
     
     phi = wachpress(n, v, x, y, method='area')
     tot_integral = np.zeros(n-1)
+    print("Sub-polygon line integrals")
     for i in range(n):
     
         # Integration of normalized functions
@@ -424,7 +436,10 @@ for k in range(2):
     
     fig.tight_layout()
     plt.savefig('sub.png',bbox_inches='tight')
+
+    print("Sub-polygon total line integral")
     print(np.sum(tot_integral))
+    line_integral = line_integral + np.sum(tot_integral)
     
     # Find coordinates inside sub polygon
     submask = np.array(xx.ravel(),dtype='bool')
@@ -453,6 +468,14 @@ for k in range(2):
         dPhiy = Phiy[1:,:-1]-Phiy[:-1,:-1]+Phiy[1:,1:]-Phiy[:-1,1:]
     
         integral = integral + 0.5*dx*dPhix+0.5*dy*dPhiy
-    
+   
+    print("Sub-polygon area integral") 
     print(np.nansum(integral))    
+    area_integral = area_integral + np.nansum(integral)
+
+print("")
+print("Total line integral")
+print(line_integral)
+print("Total area integral")
+print(area_integral)
 
