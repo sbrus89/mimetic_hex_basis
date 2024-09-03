@@ -206,7 +206,7 @@ eps = 0.0  # Factor to perturb polygon vertices
 Nx = 300   # Number of points in x direction 
 Ny = 300   # Number of points in y direction
 nt = 101   # Number of quadrature points along an edge
-N = int(Nx/30) # Quiver plot subsample factor
+N = int(Nx/20) # Quiver plot subsample factor
 ncols = 3
 nrows = int(np.ceil(n/ncols))
 figsize = (16,4*nrows)
@@ -314,18 +314,25 @@ for i in range(n):
 
     Phix, Phiy = vector_basis(n, i, v, phi)
 
+    # plot magnitude
     cr = np.linspace(0,1.0,10)
     c = ax[i].contourf(xx, yy, np.sqrt(np.square(Phix)+np.square(Phiy)), cr)
     cbar = fig.colorbar(c)
-    ax[i].quiver(xx[::N,::N],yy[::N,::N],Phix[::N,::N],Phiy[::N,::N])
-    ax[i].quiver(0.5*(v[i,0]+v[ip1,0]), 0.5*(v[i,1]+v[ip1,1]), norm[i,0], norm[i,1])
 
+    # plot vectors
+    ax[i].quiver(xx[::N,::N],yy[::N,::N],Phix[::N,::N],Phiy[::N,::N])
+
+    ## plot edge normal
+    #ax[i].quiver(0.5*(v[i,0]+v[ip1,0]), 0.5*(v[i,1]+v[ip1,1]), norm[i,0], norm[i,1])
+
+    # plot edge lines
     for j in range(n):
         jp1 = (j+1) % n
-        ax[i].plot([v[j,0], v[jp1,0]], [v[j,1], v[jp1,1]])
+        ax[i].plot([v[j,0], v[jp1,0]], [v[j,1], v[jp1,1]],color='k')
 
+     # plot vertices
     for j in range(n):
-        ax[i].scatter(v[j,0], v[j,1])
+        ax[i].scatter(v[j,0], v[j,1],color='k')
 
     ax[i].axis('equal')
 
