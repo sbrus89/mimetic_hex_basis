@@ -3,6 +3,7 @@ import matplotlib.pyplot as plt
 import random
 from shapely.geometry.polygon import Polygon
 from shapely.geometry import Point
+import netCDF4 as nc4
 
 np.seterr(divide='ignore', invalid='ignore')
  
@@ -66,9 +67,14 @@ def vector_basis(n, i, v, phi, norm_factor=1.0):
 
 def wachpress(n,v,xx,yy,method='area'):
 
-    phi = np.zeros((n,xx.shape[0],xx.shape[1]))
-    rx = np.zeros((n,xx.shape[0],xx.shape[1]))
-    ry = np.zeros((n,xx.shape[0],xx.shape[1]))
+    if len(xx.shape) == 2:
+      dims = (n,xx.shape[0],xx.shape[1])
+    else:
+      dims = (n, xx.shape[0],1)
+
+    phi = np.zeros((dims))
+    rx = np.zeros((dims))
+    ry = np.zeros((dims))
     for i in range(n):
     
         ws = np.zeros_like(xx)
@@ -113,6 +119,16 @@ def wachpress(n,v,xx,yy,method='area'):
     elif method == 'area':
         return phi
 
+def edge_normal(xi, yi, xip1, yip1):
+
+    nx = yip1 - yi
+    ny = -(xip1 - xi)
+    mag = np.sqrt(nx**2 + ny**2)
+    nx = nx/mag
+    ny = ny/mag
+
+    return nx, ny
+
 def parameterize_line(t, xi, yi, xip1, yip1):
 
     tmid = (t[1:] + t[:-1]) / 2.0
@@ -121,11 +137,7 @@ def parameterize_line(t, xi, yi, xip1, yip1):
     x = (1.0-tmid)*xi + tmid*xip1
     y = (1.0-tmid)*yi + tmid*yip1
     
-    nx = yip1 - yi
-    ny = -(xip1 - xi)
-    mag = np.sqrt(nx**2 + ny**2)
-    nx = nx/mag
-    ny = ny/mag
+    nx, ny = edge_normal(xi, yi, xip1, yip1)
     
     ds = np.sqrt(np.square(xip1-xi) + np.square(yip1-yi))*dt
 
@@ -151,7 +163,6 @@ def gnomonic_inverse(u, v, lon0, lat0):
     return lon, lat
 
 def gnomonic_integration(lon0, lat0, lon1, lat1, lon2, lat2, t):
-
 
     u1, v1 = gnomonic_forward(lon1, lat1, lon0, lat0)
     u2, v2 = gnomonic_forward(lon2, lat2, lon0, lat0)
@@ -196,7 +207,41 @@ def gnomonic_integration(lon0, lat0, lon1, lat1, lon2, lat2, t):
 
     L = np.sum(ds)*dt
 
-    return L
+    return L, ds, u, v
+
+def transform_vector_components(lon0, lat0, lon, lat, fu, fv):
+
+    u, v = gnomonic_forward(lon, lat, lon0, lat0)
+    k = 1.0 + (u**2 + v**2)/R**2
+
+    den = u**2 + (R*np.cos(lat0) - v*np.sin(lat0))**2
+    dlondu = (R*np.cos(lat0) - v*np.sin(lat0))/den 
+    dlondv = u*np.sin(lat0)/den
+
+    den = R**3*k**(3.0/2.0)*np.sqrt(1.0 - (v*np.cos(lat0) + R*np.sin(lat0))**2/(R**2*k)) 
+    dlatdu = -u*(v*np.cos(lat0) + R*np.sin(lat0))/den
+    dlatdv = ((R**2 + u**2)*np.cos(lat0) - R*v*np.sin(lat0))/den
+
+    #beta = np.sqrt(dlondu**2 + dlondv**2)
+    #gamma = np.sqrt(dlatdu**2 + dlatdv**2)
+    beta  = np.sqrt(dlondu**2 + dlatdu**2)
+    gamma = np.sqrt(dlondv**2 + dlatdv**2)
+    #beta  = 1.0
+    #gamma = 1.0
+
+    #print(dlondu)
+    #print(dlatdu)
+    #print(dlondv)
+    #print(dlatdv)
+   
+
+
+    #flon = dlondu/beta*fu + dlondv/gamma*fv
+    #flat = dlatdu/beta*fu + dlatdv/gamma*fv    
+    flon = dlondu*fu + dlondv*fv
+    flat = dlatdu*fu + dlatdv*fv    
+
+    return flon, flat
 
 #######################################################################
 #######################################################################
@@ -582,9 +627,134 @@ lon0 = 0.5*(lon1 + lon2)
 lat0 = 0.5*(lat1 + lat2)
 t = np.linspace(0.0, 1.0, 200000)
 
-L =  gnomonic_integration(lon0, lat0, lon1, lat1, lon2, lat2, t)
+L, ds, u, v =  gnomonic_integration(lon0, lat0, lon1, lat1, lon2, lat2, t)
 print(L/1000.0)
 
 hav = np.sin(0.5*(lat2-lat1))**2 + np.cos(lat1)*np.cos(lat2)*np.sin(0.5*(lon2-lon1))**2
 d = 2.0*R*np.arcsin(np.sqrt(hav))
 print(d/1000.0)
+
+
+############################################
+# Remap MPAS field
+############################################
+mesh_filename = 'soma_32km_mpas_mesh_with_rbf_weights.nc'
+nc_mesh = nc4.Dataset(mesh_filename, 'r+')
+
+nc_vars = nc_mesh.variables.keys()
+lonVertex = nc_mesh.variables['lonVertex'][:]
+latVertex = nc_mesh.variables['latVertex'][:]
+lonCell = nc_mesh.variables['lonCell'][:]
+latCell = nc_mesh.variables['latCell'][:]
+dvEdge = nc_mesh.variables['dvEdge'][:]
+
+print(np.max(lonCell))
+print(np.min(lonCell))
+
+lonCell[lonCell > np.pi] = lonCell[lonCell > np.pi] - 2.0*np.pi
+lonVertex[lonVertex > np.pi] = lonVertex[lonVertex > np.pi] - 2.0*np.pi
+
+print(np.max(lonCell))
+print(np.min(lonCell))
+
+verticesOnEdge = nc_mesh.variables['verticesOnEdge'][:]
+verticesOnCell = nc_mesh.variables['verticesOnCell'][:]
+edgesOnCell = nc_mesh.variables['edgesOnCell'][:]
+nEdgesOnCell = nc_mesh.variables['nEdgesOnCell'][:]
+cellsOnEdge = nc_mesh.variables['cellsOnEdge'][:]
+edgeSignOnCell = nc_mesh.variables['edgeSignOnCell'][:]
+
+barotropicThicknessFlux = np.squeeze(nc_mesh.variables['barotropicThicknessFlux'][:])
+barotropicThicknessFluxZonal = np.squeeze(nc_mesh.variables['barotropicThicknessFluxZonal'][:])
+barotropicThicknessFluxMeridional = np.squeeze(nc_mesh.variables['barotropicThicknessFluxMeridional'][:])
+nc_mesh.close()
+
+nCells = lonCell.size
+print(nCells)
+
+fig = plt.figure(figsize=(18, 18))
+
+ax = fig.add_subplot(3, 2, 1)
+cf = ax.tricontourf(lonCell, latCell, barotropicThicknessFluxZonal)
+fig.colorbar(cf, ax=ax)
+
+ax = fig.add_subplot(3, 2, 2)
+cf = ax.tricontourf(lonCell, latCell, barotropicThicknessFluxMeridional)
+fig.colorbar(cf, ax=ax)
+
+
+#fig2 = plt.figure(figsize=(18, 12))
+#ax2 = fig2.add_subplot(2, 2, 1)
+
+t = np.linspace(0.0, 1.0, 20)
+flon = np.zeros((nCells))
+flat = np.zeros((nCells))
+fuu = np.zeros((nCells))
+fvv = np.zeros((nCells))
+for cell in range(nCells):
+    print(cell)
+    n = nEdgesOnCell[cell]
+    vertices = verticesOnCell[cell, 0:n] - 1
+    uVertex, vVertex = gnomonic_forward(lonVertex[vertices], latVertex[vertices], lonCell[cell], latCell[cell])
+    uCell, vCell = gnomonic_forward(lonCell[cell], latCell[cell], lonCell[cell], latCell[cell])
+    uCell = np.expand_dims(np.asarray([uCell]), axis=0)
+    vCell = np.expand_dims(np.asarray([vCell]), axis=0)
+    uv = np.vstack((uVertex, vVertex)).T
+    #ax2.scatter(uv[:,0], uv[:,1],marker='x')
+
+    fu = np.zeros(uCell.shape)
+    fv = np.zeros(vCell.shape)
+    for i in range(n):
+        ip1 = (i+1) % n
+
+        lon1 = lonVertex[vertices][i]
+        lat1 = latVertex[vertices][i]
+        lon2 = lonVertex[vertices][ip1]
+        lat2 = latVertex[vertices][ip1]
+
+        L, ds, u, v =  gnomonic_integration(lonCell[cell], latCell[cell], lon1, lat1, lon2, lat2, t)
+        u = np.expand_dims(u, axis=1)
+        v = np.expand_dims(v, axis=1)
+        #ax2.scatter(u, v, marker='.')
+
+        phi = wachpress(n, uv, u, v, method='area')
+        Phiu, Phiv = vector_basis(n, i, uv, phi, norm_factor=1.0)
+        Phiu = np.squeeze(Phiu)
+        Phiv = np.squeeze(Phiv)
+
+        nu, nv = edge_normal(uv[i,0] ,uv[i,1], uv[ip1,0], uv[ip1,1])
+        integral = np.sum((Phiu*nu + Phiv*nv)*ds, axis=0)
+
+        phi = wachpress(n, uv, uCell, vCell, method='area')
+        Phiu, Phiv = vector_basis(n, i, uv, phi, norm_factor=integral)
+
+        edge = edgesOnCell[cell,i] - 1
+        fu = fu + edgeSignOnCell[cell, i]*dvEdge[edge]*barotropicThicknessFlux[edge]*Phiu
+        fv = fv + edgeSignOnCell[cell, i]*dvEdge[edge]*barotropicThicknessFlux[edge]*Phiv
+
+    fuu[cell] = fu
+    fvv[cell] = fv
+    flon[cell], flat[cell] = transform_vector_components(lonCell[cell], latCell[cell], lonCell[cell], latCell[cell], fu, fv)
+
+#plt.savefig('test.png')
+#plt.close()
+
+ax = fig.add_subplot(3, 2, 3)
+cf = ax.tricontourf(lonCell, latCell, flon)
+fig.colorbar(cf, ax=ax)
+
+ax = fig.add_subplot(3, 2, 4)
+cf = ax.tricontourf(lonCell, latCell, flat)
+fig.colorbar(cf, ax=ax)
+
+ax = fig.add_subplot(3, 2, 5)
+cf = ax.tricontourf(lonCell, latCell, fuu)
+fig.colorbar(cf, ax=ax)
+
+ax = fig.add_subplot(3, 2, 6)
+cf = ax.tricontourf(lonCell, latCell, fvv)
+fig.colorbar(cf, ax=ax)
+
+plt.savefig('field.png')
+
+plt.close()
