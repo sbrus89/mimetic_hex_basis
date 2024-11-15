@@ -679,7 +679,7 @@ print(nEdges)
 
 
 # Set up figure
-rows = 2
+rows = 3
 cols = 3
 fig = plt.figure(figsize=(18, 4.5*nrows))
 k = 1
@@ -703,8 +703,8 @@ fig.colorbar(cf, ax=ax)
 k = k + 1
 
 ax = fig.add_subplot(rows, cols, k)
-mag1 = np.sqrt(barotropicThicknessFluxZonal**2 + barotropicThicknessFluxMeridional**2)
-cf = ax.tricontourf(lonCell, latCell, mag1, levels=mlevels, extend='max')
+mag_rbf = np.sqrt(barotropicThicknessFluxZonal**2 + barotropicThicknessFluxMeridional**2)
+cf = ax.tricontourf(lonCell, latCell, mag_rbf, levels=mlevels, extend='max')
 ax.set_title('Magnitude')
 fig.colorbar(cf, ax=ax)
 k = k + 1
@@ -836,6 +836,34 @@ k = k + 1
 #cf = ax.tricontourf(lonCell, latCell, mag)
 #fig.colorbar(cf, ax=ax)
 #k = k + 1
+
+
+# Plot differences 
+ax = fig.add_subplot(rows, cols, k)
+diff = flon-barotropicThicknessFluxZonal
+vrange = np.max(np.abs(diff)) 
+levels = np.linspace(-vrange, vrange, 10)
+cf = ax.tricontourf(lonCell, latCell, diff, cmap='RdBu', levels=levels) 
+fig.colorbar(cf, ax=ax)
+ax.set_ylabel('Mimetic-RBF')
+k = k + 1
+
+ax = fig.add_subplot(rows, cols, k)
+diff = flat-barotropicThicknessFluxMeridional
+vrange = np.max(np.abs(diff)) 
+levels = np.linspace(-vrange, vrange, 10)
+cf = ax.tricontourf(lonCell, latCell, diff, cmap='RdBu', levels=levels)
+fig.colorbar(cf, ax=ax)
+k = k + 1
+
+ax = fig.add_subplot(rows, cols, k)
+mag = np.sqrt(flon**2 + flat**2)
+diff = mag-mag_rbf
+vrange = np.max(np.abs(diff)) 
+levels = np.linspace(-vrange, vrange, 10)
+cf = ax.tricontourf(lonCell, latCell, diff, cmap='RdBu', levels=levels)
+fig.colorbar(cf, ax=ax)
+k = k + 1
 
 plt.savefig('field.png')
 plt.close()
