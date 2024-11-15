@@ -658,6 +658,7 @@ print(d/1000.0)
 mesh_filename = 'soma_32km_mpas_mesh_with_rbf_weights.nc'
 nc_mesh = nc4.Dataset(mesh_filename, 'r+')
 
+# read in mpas mesh coordinates
 nc_vars = nc_mesh.variables.keys()
 lonVertex = nc_mesh.variables['lonVertex'][:]
 latVertex = nc_mesh.variables['latVertex'][:]
@@ -665,41 +666,33 @@ lonCell = nc_mesh.variables['lonCell'][:]
 latCell = nc_mesh.variables['latCell'][:]
 lonEdge = nc_mesh.variables['lonEdge'][:]
 latEdge = nc_mesh.variables['latEdge'][:]
-dvEdge = nc_mesh.variables['dvEdge'][:]
 
-print(np.max(lonCell))
-print(np.min(lonCell))
-
+# 0,360 -> -180,180 adjustment
 lonCell[lonCell > np.pi] = lonCell[lonCell > np.pi] - 2.0*np.pi
 lonVertex[lonVertex > np.pi] = lonVertex[lonVertex > np.pi] - 2.0*np.pi
 
-print(np.max(lonCell))
-print(np.min(lonCell))
-
+# read in mesh connectivity information
 verticesOnEdge = nc_mesh.variables['verticesOnEdge'][:]
 verticesOnCell = nc_mesh.variables['verticesOnCell'][:]
 edgesOnCell = nc_mesh.variables['edgesOnCell'][:]
 nEdgesOnCell = nc_mesh.variables['nEdgesOnCell'][:]
 cellsOnEdge = nc_mesh.variables['cellsOnEdge'][:]
 edgeSignOnCell = nc_mesh.variables['edgeSignOnCell'][:]
-bottomDepth = nc_mesh.variables['bottomDepth'][:]
 angleEdge = nc_mesh.variables['angleEdge'][:]
+dvEdge = nc_mesh.variables['dvEdge'][:]
 
+# read in fields
 barotropicThicknessFlux = np.squeeze(nc_mesh.variables['barotropicThicknessFlux'][:])
 barotropicThicknessFluxZonal = np.squeeze(nc_mesh.variables['barotropicThicknessFluxZonal'][:])
 barotropicThicknessFluxMeridional = np.squeeze(nc_mesh.variables['barotropicThicknessFluxMeridional'][:])
 nc_mesh.close()
 
+# get number of cells and edges
 nCells = lonCell.size
 print(nCells)
 nEdges = barotropicThicknessFlux.size
 print(nEdges)
 
-bottomDepthEdge = np.zeros((nEdges))
-for edge in range(nEdges):
-    cell1 = cellsOnEdge[edge,0] - 1
-    cell2 = cellsOnEdge[edge,1] - 1
-    bottomDepthEdge[edge] = 0.5*(bottomDepth[cell1] + bottomDepth[cell2])
 
 # Set up figure
 rows = 2
@@ -754,8 +747,10 @@ k = k + 1
 #print(np.max(np.abs(mag1-mag2)))
 
 
+# discrete points for computing the edge integral for the basis function normalization
 t = np.linspace(0.0, 1.0, 20)
 dt = t[1] - t[0]
+
 flon = np.zeros((nCells))
 flat = np.zeros((nCells))
 fuu = np.zeros((nCells))
@@ -766,18 +761,22 @@ for cell in range(nCells):
 
     n = nEdgesOnCell[cell]
     vertices = verticesOnCell[cell, 0:n] - 1
-    vertices = np.roll(vertices, 1)
+    vertices = np.roll(vertices, 1) # this is important to account for how mpas defines vertices on an edge
+
+    # gnomonic projection center
     #lon0 = lonCell[cell]
     #lat0 = latCell[cell]
     lon0 = 0.5*(np.max(lonCell) + np.min(lonCell))
     lat0 = 0.5*(np.max(latCell) + np.min(latCell))
 
-    # Vertex coordinates in u, v
+    # Cell vertex coordinates in u, v
     uVertex, vVertex = gnomonic_forward(lonVertex[vertices], latVertex[vertices], lon0, lat0)
+    uv = np.vstack((uVertex, vVertex)).T # package for call to watchpress, vector_basis etc
+
+    # Cell center coordinates in u,v
     uCell, vCell = gnomonic_forward(lonCell[cell], latCell[cell], lon0, lat0)
-    uCell = np.expand_dims(np.asarray([uCell]), axis=0)
+    uCell = np.expand_dims(np.asarray([uCell]), axis=0) # put single value in an array for call to watchpress
     vCell = np.expand_dims(np.asarray([vCell]), axis=0)
-    uv = np.vstack((uVertex, vVertex)).T
 
     fu = np.zeros(uCell.shape)
     fv = np.zeros(vCell.shape)
@@ -791,7 +790,7 @@ for cell in range(nCells):
         lon2 = lonVertex[vertices][ip1]
         lat2 = latVertex[vertices][ip1]
 
-        # u, v quadrature points and ds transformation
+        # u, v quadrature points and ds transformation factor for integral
         L, ds, u, v =  gnomonic_integration(lon0, lat0, lon1, lat1, lon2, lat2, t)
         u = np.expand_dims(u, axis=1)
         v = np.expand_dims(v, axis=1)
@@ -802,7 +801,7 @@ for cell in range(nCells):
         Phiu = np.squeeze(Phiu)
         Phiv = np.squeeze(Phiv)
 
-        # compute edge normalization factor      
+        # compute integral over edge for basis function normalization factor      
         nu, nv = edge_normal(uv[i,0] ,uv[i,1], uv[ip1,0], uv[ip1,1])
         integral = -np.sum((Phiu*nu + Phiv*nv)*ds*dt, axis=0)
 
@@ -816,6 +815,8 @@ for cell in range(nCells):
 
     fuu[cell] = fu
     fvv[cell] = fv
+
+    # compute lon lat vector components
     flon[cell], flat[cell] = transform_vector_components_uv_latlon(lon0, lat0, lonCell[cell], latCell[cell], fu, fv)
 
 # Plot lat lon components of reconstructed field
