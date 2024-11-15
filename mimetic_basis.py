@@ -181,13 +181,13 @@ def gnomonic_integration(lon0, lat0, lon1, lat1, lon2, lat2, t):
     u1, v1 = gnomonic_forward(lon1, lat1, lon0, lat0)
     u2, v2 = gnomonic_forward(lon2, lat2, lon0, lat0)
 
-    u = t*u2 + (1.0-t)*u1
-    v = t*v2 + (1.0-t)*v1
+    u = 0.5*((1.0+t)*u2 + (1.0-t)*u1)
+    v = 0.5*((1.0+t)*v2 + (1.0-t)*v1)
 
     lon, lat = gnomonic_inverse(u, v, lon0, lat0)
 
-    dudt = u2 - u1
-    dvdt = v2 - v1
+    dudt = 0.5*(u2 - u1)
+    dvdt = 0.5*(v2 - v1)
 
     dxdlat = -R*np.sin(lat)*np.cos(lon)
     dxdlon = -R*np.cos(lat)*np.sin(lon)
@@ -208,11 +208,8 @@ def gnomonic_integration(lon0, lat0, lon1, lat1, lon2, lat2, t):
     dzdt = dzdlat*dlatdt + dzdlon*dlondt
 
     ds = np.sqrt(np.square(dxdt) + np.square(dydt) + np.square(dzdt))
-    dt = t[1] - t[0]
 
-    L = np.sum(ds)*dt
-
-    return L, ds, u, v
+    return ds, u, v
 
 def transform_vector_components_uv_latlon(lon0, lat0, lon, lat, fu, fv):
 
@@ -222,13 +219,6 @@ def transform_vector_components_uv_latlon(lon0, lat0, lon, lat, fu, fv):
 
     beta  = np.sqrt(dlondu**2 + dlatdu**2)
     gamma = np.sqrt(dlondv**2 + dlatdv**2)
-
-    #print(dlondu)
-    #print(dlatdu)
-    #print(dlondv)
-    #print(dlatdv)
-   
-
 
     flon = dlondu/beta*fu + dlondv/gamma*fv
     flat = dlatdu/beta*fu + dlatdv/gamma*fv    
@@ -245,13 +235,6 @@ def transform_vector_components_latlon_uv(lon0, lat0, lon, lat, flon, flat):
 
     beta  = np.sqrt(dlondu**2 + dlatdu**2)
     gamma = np.sqrt(dlondv**2 + dlatdv**2)
-
-    #print(dlondu)
-    #print(dlatdu)
-    #print(dlondv)
-    #print(dlatdv)
-   
-
 
     fu = dlondu/beta*flon + dlatdu/beta*flat
     fv = dlondv/gamma*flon + dlatdv/gamma*flat    
@@ -642,9 +625,10 @@ lat2 = np.radians(lat2)
 
 lon0 = 0.5*(lon1 + lon2)
 lat0 = 0.5*(lat1 + lat2)
-t = np.linspace(0.0, 1.0, 200000)
+t, w = np.polynomial.legendre.leggauss(100)
 
-L, ds, u, v =  gnomonic_integration(lon0, lat0, lon1, lat1, lon2, lat2, t)
+ds, u, v =  gnomonic_integration(lon0, lat0, lon1, lat1, lon2, lat2, t)
+L = np.sum(ds*w)
 print(L/1000.0)
 
 hav = np.sin(0.5*(lat2-lat1))**2 + np.cos(lat1)*np.cos(lat2)*np.sin(0.5*(lon2-lon1))**2
@@ -747,9 +731,8 @@ k = k + 1
 #print(np.max(np.abs(mag1-mag2)))
 
 
-# discrete points for computing the edge integral for the basis function normalization
-t = np.linspace(0.0, 1.0, 20)
-dt = t[1] - t[0]
+# quadrature points for computing the edge integral for the basis function normalization
+t, w = np.polynomial.legendre.leggauss(100)
 
 flon = np.zeros((nCells))
 flat = np.zeros((nCells))
@@ -791,7 +774,7 @@ for cell in range(nCells):
         lat2 = latVertex[vertices][ip1]
 
         # u, v quadrature points and ds transformation factor for integral
-        L, ds, u, v =  gnomonic_integration(lon0, lat0, lon1, lat1, lon2, lat2, t)
+        ds, u, v =  gnomonic_integration(lon0, lat0, lon1, lat1, lon2, lat2, t)
         u = np.expand_dims(u, axis=1)
         v = np.expand_dims(v, axis=1)
 
@@ -803,7 +786,7 @@ for cell in range(nCells):
 
         # compute integral over edge for basis function normalization factor      
         nu, nv = edge_normal(uv[i,0] ,uv[i,1], uv[ip1,0], uv[ip1,1])
-        integral = -np.sum((Phiu*nu + Phiv*nv)*ds*dt, axis=0)
+        integral = -np.sum(w*(Phiu*nu + Phiv*nv)*ds, axis=0)
 
         # compute normalized basis functions at cell centers 
         phi = wachpress(n, uv, uCell, vCell, method='area')
