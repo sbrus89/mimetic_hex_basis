@@ -162,6 +162,20 @@ def gnomonic_inverse(u, v, lon0, lat0):
 
     return lon, lat
 
+def latlon_uv_jacobian(u, v, lon0, lat0):
+
+    k = 1.0 + (u**2 + v**2)/R**2
+
+    den = u**2 + (R*np.cos(lat0) - v*np.sin(lat0))**2
+    dlondu = (R*np.cos(lat0) - v*np.sin(lat0))/den 
+    dlondv = u*np.sin(lat0)/den
+
+    den = R**3*k**(3.0/2.0)*np.sqrt(1.0 - (v*np.cos(lat0) + R*np.sin(lat0))**2/(R**2*k)) 
+    dlatdu = -u*(v*np.cos(lat0) + R*np.sin(lat0))/den
+    dlatdv = ((R**2 + u**2)*np.cos(lat0) - R*v*np.sin(lat0))/den
+
+    return dlondu, dlondv, dlatdu, dlatdv
+
 def gnomonic_integration(lon0, lat0, lon1, lat1, lon2, lat2, t):
 
     u1, v1 = gnomonic_forward(lon1, lat1, lon0, lat0)
@@ -184,16 +198,7 @@ def gnomonic_integration(lon0, lat0, lon1, lat1, lon2, lat2, t):
     dzdlat = R*np.cos(lat)
     dzdlon = 0.0
 
-    k = 1.0 + (u**2 + v**2)/R**2
-    rho = np.sqrt(u**2 + v**2)
-
-    den = u**2 + (R*np.cos(lat0) - v*np.sin(lat0))**2
-    dlondu = (R*np.cos(lat0) - v*np.sin(lat0))/den 
-    dlondv = u*np.sin(lat0)/den
-
-    den = R**3*k**(3.0/2.0)*np.sqrt(1.0 - (v*np.cos(lat0) + R*np.sin(lat0))**2/(R**2*k)) 
-    dlatdu = -u*(v*np.cos(lat0) + R*np.sin(lat0))/den
-    dlatdv = ((R**2 + u**2)*np.cos(lat0) - R*v*np.sin(lat0))/den
+    dlondu, dlondv, dlatdu, dlatdv = latlon_uv_jacobian(u, v, lon0, lat0)
 
     dlatdt = dlatdu*dudt + dlatdv*dvdt 
     dlondt = dlondu*dudt + dlondv*dvdt
@@ -209,25 +214,14 @@ def gnomonic_integration(lon0, lat0, lon1, lat1, lon2, lat2, t):
 
     return L, ds, u, v
 
-def transform_vector_components(lon0, lat0, lon, lat, fu, fv):
+def transform_vector_components_uv_latlon(lon0, lat0, lon, lat, fu, fv):
 
     u, v = gnomonic_forward(lon, lat, lon0, lat0)
-    k = 1.0 + (u**2 + v**2)/R**2
 
-    den = u**2 + (R*np.cos(lat0) - v*np.sin(lat0))**2
-    dlondu = (R*np.cos(lat0) - v*np.sin(lat0))/den 
-    dlondv = u*np.sin(lat0)/den
+    dlondu, dlondv, dlatdu, dlatdv = latlon_uv_jacobian(u, v, lon0, lat0)
 
-    den = R**3*k**(3.0/2.0)*np.sqrt(1.0 - (v*np.cos(lat0) + R*np.sin(lat0))**2/(R**2*k)) 
-    dlatdu = -u*(v*np.cos(lat0) + R*np.sin(lat0))/den
-    dlatdv = ((R**2 + u**2)*np.cos(lat0) - R*v*np.sin(lat0))/den
-
-    #beta = np.sqrt(dlondu**2 + dlondv**2)
-    #gamma = np.sqrt(dlatdu**2 + dlatdv**2)
     beta  = np.sqrt(dlondu**2 + dlatdu**2)
     gamma = np.sqrt(dlondv**2 + dlatdv**2)
-    #beta  = 1.0
-    #gamma = 1.0
 
     #print(dlondu)
     #print(dlatdu)
@@ -236,12 +230,35 @@ def transform_vector_components(lon0, lat0, lon, lat, fu, fv):
    
 
 
-    #flon = dlondu/beta*fu + dlondv/gamma*fv
-    #flat = dlatdu/beta*fu + dlatdv/gamma*fv    
-    flon = dlondu*fu + dlondv*fv
-    flat = dlatdu*fu + dlatdv*fv    
+    flon = dlondu/beta*fu + dlondv/gamma*fv
+    flat = dlatdu/beta*fu + dlatdv/gamma*fv    
+    #flon = dlondu*fu + dlondv*fv
+    #flat = dlatdu*fu + dlatdv*fv    
 
     return flon, flat
+
+def transform_vector_components_latlon_uv(lon0, lat0, lon, lat, flon, flat):
+
+    u, v = gnomonic_forward(lon, lat, lon0, lat0)
+
+    dlondu, dlondv, dlatdu, dlatdv = latlon_uv_jacobian(u, v, lon0, lat0)
+
+    beta  = np.sqrt(dlondu**2 + dlatdu**2)
+    gamma = np.sqrt(dlondv**2 + dlatdv**2)
+
+    #print(dlondu)
+    #print(dlatdu)
+    #print(dlondv)
+    #print(dlatdv)
+   
+
+
+    fu = dlondu/beta*flon + dlatdu/beta*flat
+    fv = dlondv/gamma*flon + dlatdv/gamma*flat    
+    #fu = dlondu*flon + dlatdu*flat
+    #fv = dlondv*flon + dlatdv*flat    
+
+    return fu, fv
 
 #######################################################################
 #######################################################################
@@ -646,6 +663,8 @@ lonVertex = nc_mesh.variables['lonVertex'][:]
 latVertex = nc_mesh.variables['latVertex'][:]
 lonCell = nc_mesh.variables['lonCell'][:]
 latCell = nc_mesh.variables['latCell'][:]
+lonEdge = nc_mesh.variables['lonEdge'][:]
+latEdge = nc_mesh.variables['latEdge'][:]
 dvEdge = nc_mesh.variables['dvEdge'][:]
 
 print(np.max(lonCell))
@@ -663,6 +682,8 @@ edgesOnCell = nc_mesh.variables['edgesOnCell'][:]
 nEdgesOnCell = nc_mesh.variables['nEdgesOnCell'][:]
 cellsOnEdge = nc_mesh.variables['cellsOnEdge'][:]
 edgeSignOnCell = nc_mesh.variables['edgeSignOnCell'][:]
+bottomDepth = nc_mesh.variables['bottomDepth'][:]
+angleEdge = nc_mesh.variables['angleEdge'][:]
 
 barotropicThicknessFlux = np.squeeze(nc_mesh.variables['barotropicThicknessFlux'][:])
 barotropicThicknessFluxZonal = np.squeeze(nc_mesh.variables['barotropicThicknessFluxZonal'][:])
@@ -671,90 +692,166 @@ nc_mesh.close()
 
 nCells = lonCell.size
 print(nCells)
+nEdges = barotropicThicknessFlux.size
+print(nEdges)
 
-fig = plt.figure(figsize=(18, 18))
+bottomDepthEdge = np.zeros((nEdges))
+for edge in range(nEdges):
+    cell1 = cellsOnEdge[edge,0] - 1
+    cell2 = cellsOnEdge[edge,1] - 1
+    bottomDepthEdge[edge] = 0.5*(bottomDepth[cell1] + bottomDepth[cell2])
 
-ax = fig.add_subplot(3, 2, 1)
-cf = ax.tricontourf(lonCell, latCell, barotropicThicknessFluxZonal)
+# Set up figure
+rows = 2
+cols = 3
+fig = plt.figure(figsize=(18, 4.5*nrows))
+k = 1
+vmin = -2.5
+vmax = 3.5
+levels = np.linspace(vmin, vmax, 10)
+mlevels = np.linspace(0, vmax, 10)
+
+# Plot original RBF field
+ax = fig.add_subplot(rows, cols, k)
+cf = ax.tricontourf(lonCell, latCell, barotropicThicknessFluxZonal, levels=levels, extend='both')
+ax.set_title('Zonal component')
+ax.set_ylabel('RFB')
 fig.colorbar(cf, ax=ax)
+k = k + 1
 
-ax = fig.add_subplot(3, 2, 2)
-cf = ax.tricontourf(lonCell, latCell, barotropicThicknessFluxMeridional)
+ax = fig.add_subplot(rows, cols, k)
+cf = ax.tricontourf(lonCell, latCell, barotropicThicknessFluxMeridional, levels=levels, extend='both')
+ax.set_title('Meridonal component')
 fig.colorbar(cf, ax=ax)
+k = k + 1
 
+ax = fig.add_subplot(rows, cols, k)
+mag1 = np.sqrt(barotropicThicknessFluxZonal**2 + barotropicThicknessFluxMeridional**2)
+cf = ax.tricontourf(lonCell, latCell, mag1, levels=mlevels, extend='max')
+ax.set_title('Magnitude')
+fig.colorbar(cf, ax=ax)
+k = k + 1
 
-#fig2 = plt.figure(figsize=(18, 12))
-#ax2 = fig2.add_subplot(2, 2, 1)
+# Plot u, v component of RBF field
+#bu, bv = transform_vector_components_latlon_uv(lon0, lat0, lonCell, latCell, barotropicThicknessFluxZonal, barotropicThicknessFluxMeridional)
+# 
+#ax = fig.add_subplot(rows, cols, k)
+#cf = ax.tricontourf(lonCell, latCell, bu)
+#fig.colorbar(cf, ax=ax)
+#k = k + 1
+#
+#ax = fig.add_subplot(rows, cols, k)
+#cf = ax.tricontourf(lonCell, latCell, bv)
+#fig.colorbar(cf, ax=ax)
+#k = k + 1
+#
+#ax = fig.add_subplot(rows, cols, k)
+#mag2 = np.sqrt(bu**2 + bv**2)
+#cf = ax.tricontourf(lonCell, latCell, mag2)
+#fig.colorbar(cf, ax=ax)
+#k = k + 1
+
+#print(np.max(np.abs(mag1-mag2)))
+
 
 t = np.linspace(0.0, 1.0, 20)
+dt = t[1] - t[0]
 flon = np.zeros((nCells))
 flat = np.zeros((nCells))
 fuu = np.zeros((nCells))
 fvv = np.zeros((nCells))
+#nCells = 0
 for cell in range(nCells):
     print(cell)
+
     n = nEdgesOnCell[cell]
     vertices = verticesOnCell[cell, 0:n] - 1
-    uVertex, vVertex = gnomonic_forward(lonVertex[vertices], latVertex[vertices], lonCell[cell], latCell[cell])
-    uCell, vCell = gnomonic_forward(lonCell[cell], latCell[cell], lonCell[cell], latCell[cell])
+    vertices = np.roll(vertices, 1)
+    #lon0 = lonCell[cell]
+    #lat0 = latCell[cell]
+    lon0 = 0.5*(np.max(lonCell) + np.min(lonCell))
+    lat0 = 0.5*(np.max(latCell) + np.min(latCell))
+
+    # Vertex coordinates in u, v
+    uVertex, vVertex = gnomonic_forward(lonVertex[vertices], latVertex[vertices], lon0, lat0)
+    uCell, vCell = gnomonic_forward(lonCell[cell], latCell[cell], lon0, lat0)
     uCell = np.expand_dims(np.asarray([uCell]), axis=0)
     vCell = np.expand_dims(np.asarray([vCell]), axis=0)
     uv = np.vstack((uVertex, vVertex)).T
-    #ax2.scatter(uv[:,0], uv[:,1],marker='x')
 
     fu = np.zeros(uCell.shape)
     fv = np.zeros(vCell.shape)
     for i in range(n):
         ip1 = (i+1) % n
+        edge = edgesOnCell[cell,i] - 1
 
+        # lon, lat coordinates of edge vertices
         lon1 = lonVertex[vertices][i]
         lat1 = latVertex[vertices][i]
         lon2 = lonVertex[vertices][ip1]
         lat2 = latVertex[vertices][ip1]
 
-        L, ds, u, v =  gnomonic_integration(lonCell[cell], latCell[cell], lon1, lat1, lon2, lat2, t)
+        # u, v quadrature points and ds transformation
+        L, ds, u, v =  gnomonic_integration(lon0, lat0, lon1, lat1, lon2, lat2, t)
         u = np.expand_dims(u, axis=1)
         v = np.expand_dims(v, axis=1)
-        #ax2.scatter(u, v, marker='.')
 
+        # evaluate basis functions at quadrature points
         phi = wachpress(n, uv, u, v, method='area')
         Phiu, Phiv = vector_basis(n, i, uv, phi, norm_factor=1.0)
         Phiu = np.squeeze(Phiu)
         Phiv = np.squeeze(Phiv)
 
+        # compute edge normalization factor      
         nu, nv = edge_normal(uv[i,0] ,uv[i,1], uv[ip1,0], uv[ip1,1])
-        integral = np.sum((Phiu*nu + Phiv*nv)*ds, axis=0)
+        integral = -np.sum((Phiu*nu + Phiv*nv)*ds*dt, axis=0)
 
+        # compute normalized basis functions at cell centers 
         phi = wachpress(n, uv, uCell, vCell, method='area')
         Phiu, Phiv = vector_basis(n, i, uv, phi, norm_factor=integral)
 
-        edge = edgesOnCell[cell,i] - 1
+        # compute reconstruction at cell center
         fu = fu + edgeSignOnCell[cell, i]*dvEdge[edge]*barotropicThicknessFlux[edge]*Phiu
         fv = fv + edgeSignOnCell[cell, i]*dvEdge[edge]*barotropicThicknessFlux[edge]*Phiv
 
     fuu[cell] = fu
     fvv[cell] = fv
-    flon[cell], flat[cell] = transform_vector_components(lonCell[cell], latCell[cell], lonCell[cell], latCell[cell], fu, fv)
+    flon[cell], flat[cell] = transform_vector_components_uv_latlon(lon0, lat0, lonCell[cell], latCell[cell], fu, fv)
 
-#plt.savefig('test.png')
-#plt.close()
-
-ax = fig.add_subplot(3, 2, 3)
-cf = ax.tricontourf(lonCell, latCell, flon)
+# Plot lat lon components of reconstructed field
+ax = fig.add_subplot(rows, cols, k)
+cf = ax.tricontourf(lonCell, latCell, flon, levels=levels, extend='both')
 fig.colorbar(cf, ax=ax)
+ax.set_ylabel('Mimetic interpolation')
+k = k + 1
 
-ax = fig.add_subplot(3, 2, 4)
-cf = ax.tricontourf(lonCell, latCell, flat)
+ax = fig.add_subplot(rows, cols, k)
+cf = ax.tricontourf(lonCell, latCell, flat, levels=levels, extend='both')
 fig.colorbar(cf, ax=ax)
+k = k + 1
 
-ax = fig.add_subplot(3, 2, 5)
-cf = ax.tricontourf(lonCell, latCell, fuu)
+ax = fig.add_subplot(rows, cols, k)
+mag = np.sqrt(flon**2 + flat**2)
+cf = ax.tricontourf(lonCell, latCell, mag, levels=mlevels, extend='max')
 fig.colorbar(cf, ax=ax)
+k = k + 1
 
-ax = fig.add_subplot(3, 2, 6)
-cf = ax.tricontourf(lonCell, latCell, fvv)
-fig.colorbar(cf, ax=ax)
+# Plot u, v components of reconstructed field
+#ax = fig.add_subplot(rows, cols, k)
+#cf = ax.tricontourf(lonCell, latCell, fuu)
+#fig.colorbar(cf, ax=ax)
+#k = k + 1
+#
+#ax = fig.add_subplot(rows, cols, k)
+#cf = ax.tricontourf(lonCell, latCell, fvv)
+#fig.colorbar(cf, ax=ax)
+#k = k + 1
+#
+#ax = fig.add_subplot(rows, cols, k)
+#mag = np.sqrt(fuu**2 + fvv**2)
+#cf = ax.tricontourf(lonCell, latCell, mag)
+#fig.colorbar(cf, ax=ax)
+#k = k + 1
 
 plt.savefig('field.png')
-
 plt.close()
