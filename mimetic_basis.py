@@ -7,7 +7,8 @@ import netCDF4 as nc4
 
 np.seterr(divide='ignore', invalid='ignore')
  
-R = 6356.0*1000.0
+#R = 6356.0*1000.0
+R= 6371220.0
 
 def area(x, y, x1, y1, x2, y2):
 
