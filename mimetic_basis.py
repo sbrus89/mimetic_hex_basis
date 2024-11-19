@@ -1,3 +1,4 @@
+import time
 import numpy as np
 import matplotlib.pyplot as plt
 import random
@@ -182,8 +183,12 @@ def gnomonic_integration(lon0, lat0, lon1, lat1, lon2, lat2, t):
     u1, v1 = gnomonic_forward(lon1, lat1, lon0, lat0)
     u2, v2 = gnomonic_forward(lon2, lat2, lon0, lat0)
 
-    u = 0.5*((1.0+t)*u2 + (1.0-t)*u1)
-    v = 0.5*((1.0+t)*v2 + (1.0-t)*v1)
+    if isinstance(u1,np.ndarray):
+        u = 0.5*(np.matmul(u2, (1.0+t).T) + np.matmul(u1, (1.0-t).T))
+        v = 0.5*(np.matmul(v2, (1.0+t).T) + np.matmul(v1, (1.0-t).T))
+    else:
+        u = 0.5*((1.0+t)*u2 + (1.0-t)*u1)
+        v = 0.5*((1.0+t)*v2 + (1.0-t)*v1)
 
     lon, lat = gnomonic_inverse(u, v, lon0, lat0)
 
@@ -679,6 +684,77 @@ nEdges = barotropicThicknessFlux.size
 print(nEdges)
 
 
+# quadrature points for computing the edge integral for the basis function normalization
+t, w = np.polynomial.legendre.leggauss(100)
+t = np.expand_dims(t, axis=1)
+
+flon = np.zeros((nCells))
+flat = np.zeros((nCells))
+fuu = np.zeros((nCells))
+fvv = np.zeros((nCells))
+#nCells = 0
+for cell in range(nCells):
+    print(cell)
+
+    n = nEdgesOnCell[cell]
+    vertices = verticesOnCell[cell, 0:n] - 1
+    vertices = np.roll(vertices, 1) # this is important to account for how mpas defines vertices on an edge
+    vertices_p1 = np.roll(vertices, -1)
+
+    # gnomonic projection center
+    #lon0 = lonCell[cell]
+    #lat0 = latCell[cell]
+    lon0 = 0.5*(np.max(lonCell) + np.min(lonCell))
+    lat0 = 0.5*(np.max(latCell) + np.min(latCell))
+
+    # Cell vertex coordinates in u, v
+    uVertex, vVertex = gnomonic_forward(lonVertex[vertices], latVertex[vertices], lon0, lat0)
+    uv = np.vstack((uVertex, vVertex)).T # package for call to watchpress, vector_basis etc
+
+    # Evaluate watchpress functions at cell center coordinates in u,v
+    uCell, vCell = gnomonic_forward(lonCell[cell], latCell[cell], lon0, lat0)
+    uCell = np.expand_dims(np.asarray([uCell]), axis=0) # put single value in an array for call to watchpress
+    vCell = np.expand_dims(np.asarray([vCell]), axis=0)
+    phi_cell = wachpress(n, uv, uCell, vCell, method='area')
+
+    # Evaluate watchpress functions at quadrature points 
+    lon1 = np.expand_dims(lonVertex[vertices], axis=1)
+    lat1 = np.expand_dims(latVertex[vertices], axis=1)
+    lon2 = np.expand_dims(lonVertex[vertices_p1], axis=1)
+    lat2 = np.expand_dims(latVertex[vertices_p1], axis=1)
+    ds, u, v =  gnomonic_integration(lon0, lat0, lon1, lat1, lon2, lat2, t)
+    phi = wachpress(n, uv, u, v, method='area')
+
+    fu = np.zeros(uCell.shape)
+    fv = np.zeros(vCell.shape)
+    for i in range(n):
+        ip1 = (i+1) % n
+        edge = edgesOnCell[cell,i] - 1
+
+        # evaluate basis functions at quadrature points
+        Phiu, Phiv = vector_basis(n, i, uv, np.expand_dims(phi[:,i,:], axis=-1), norm_factor=1.0)
+        Phiu = np.squeeze(Phiu)
+        Phiv = np.squeeze(Phiv)
+
+        # compute integral over edge for basis function normalization factor      
+        nu, nv = edge_normal(uv[i,0] ,uv[i,1], uv[ip1,0], uv[ip1,1])
+        integral = -np.sum(w*(Phiu*nu + Phiv*nv)*ds[i,:], axis=0)
+
+        # compute normalized basis functions at cell centers 
+        Phiu, Phiv = vector_basis(n, i, uv, phi_cell , norm_factor=integral)
+
+        # compute reconstruction at cell center
+        fu = fu + edgeSignOnCell[cell, i]*dvEdge[edge]*barotropicThicknessFlux[edge]*Phiu
+        fv = fv + edgeSignOnCell[cell, i]*dvEdge[edge]*barotropicThicknessFlux[edge]*Phiv
+
+    fuu[cell] = fu
+    fvv[cell] = fv
+
+    # compute lon lat vector components
+    flon[cell], flat[cell] = transform_vector_components_uv_latlon(lon0, lat0, lonCell[cell], latCell[cell], fu, fv)
+
+print(np.round(time.time() - t_start, 3))
+
 # Set up figure
 rows = 3
 cols = 3
@@ -710,99 +786,6 @@ ax.set_title('Magnitude')
 fig.colorbar(cf, ax=ax)
 k = k + 1
 
-# Plot u, v component of RBF field
-#bu, bv = transform_vector_components_latlon_uv(lon0, lat0, lonCell, latCell, barotropicThicknessFluxZonal, barotropicThicknessFluxMeridional)
-# 
-#ax = fig.add_subplot(rows, cols, k)
-#cf = ax.tricontourf(lonCell, latCell, bu)
-#fig.colorbar(cf, ax=ax)
-#k = k + 1
-#
-#ax = fig.add_subplot(rows, cols, k)
-#cf = ax.tricontourf(lonCell, latCell, bv)
-#fig.colorbar(cf, ax=ax)
-#k = k + 1
-#
-#ax = fig.add_subplot(rows, cols, k)
-#mag2 = np.sqrt(bu**2 + bv**2)
-#cf = ax.tricontourf(lonCell, latCell, mag2)
-#fig.colorbar(cf, ax=ax)
-#k = k + 1
-
-#print(np.max(np.abs(mag1-mag2)))
-
-
-# quadrature points for computing the edge integral for the basis function normalization
-t, w = np.polynomial.legendre.leggauss(100)
-
-flon = np.zeros((nCells))
-flat = np.zeros((nCells))
-fuu = np.zeros((nCells))
-fvv = np.zeros((nCells))
-#nCells = 0
-for cell in range(nCells):
-    print(cell)
-
-    n = nEdgesOnCell[cell]
-    vertices = verticesOnCell[cell, 0:n] - 1
-    vertices = np.roll(vertices, 1) # this is important to account for how mpas defines vertices on an edge
-
-    # gnomonic projection center
-    #lon0 = lonCell[cell]
-    #lat0 = latCell[cell]
-    lon0 = 0.5*(np.max(lonCell) + np.min(lonCell))
-    lat0 = 0.5*(np.max(latCell) + np.min(latCell))
-
-    # Cell vertex coordinates in u, v
-    uVertex, vVertex = gnomonic_forward(lonVertex[vertices], latVertex[vertices], lon0, lat0)
-    uv = np.vstack((uVertex, vVertex)).T # package for call to watchpress, vector_basis etc
-
-    # Cell center coordinates in u,v
-    uCell, vCell = gnomonic_forward(lonCell[cell], latCell[cell], lon0, lat0)
-    uCell = np.expand_dims(np.asarray([uCell]), axis=0) # put single value in an array for call to watchpress
-    vCell = np.expand_dims(np.asarray([vCell]), axis=0)
-
-    fu = np.zeros(uCell.shape)
-    fv = np.zeros(vCell.shape)
-    for i in range(n):
-        ip1 = (i+1) % n
-        edge = edgesOnCell[cell,i] - 1
-
-        # lon, lat coordinates of edge vertices
-        lon1 = lonVertex[vertices][i]
-        lat1 = latVertex[vertices][i]
-        lon2 = lonVertex[vertices][ip1]
-        lat2 = latVertex[vertices][ip1]
-
-        # u, v quadrature points and ds transformation factor for integral
-        ds, u, v =  gnomonic_integration(lon0, lat0, lon1, lat1, lon2, lat2, t)
-        u = np.expand_dims(u, axis=1)
-        v = np.expand_dims(v, axis=1)
-
-        # evaluate basis functions at quadrature points
-        phi = wachpress(n, uv, u, v, method='area')
-        Phiu, Phiv = vector_basis(n, i, uv, phi, norm_factor=1.0)
-        Phiu = np.squeeze(Phiu)
-        Phiv = np.squeeze(Phiv)
-
-        # compute integral over edge for basis function normalization factor      
-        nu, nv = edge_normal(uv[i,0] ,uv[i,1], uv[ip1,0], uv[ip1,1])
-        integral = -np.sum(w*(Phiu*nu + Phiv*nv)*ds, axis=0)
-
-        # compute normalized basis functions at cell centers 
-        phi = wachpress(n, uv, uCell, vCell, method='area')
-        Phiu, Phiv = vector_basis(n, i, uv, phi, norm_factor=integral)
-
-        # compute reconstruction at cell center
-        fu = fu + edgeSignOnCell[cell, i]*dvEdge[edge]*barotropicThicknessFlux[edge]*Phiu
-        fv = fv + edgeSignOnCell[cell, i]*dvEdge[edge]*barotropicThicknessFlux[edge]*Phiv
-
-    fuu[cell] = fu
-    fvv[cell] = fv
-
-    # compute lon lat vector components
-    flon[cell], flat[cell] = transform_vector_components_uv_latlon(lon0, lat0, lonCell[cell], latCell[cell], fu, fv)
-
 # Plot lat lon components of reconstructed field
 ax = fig.add_subplot(rows, cols, k)
 cf = ax.tricontourf(lonCell, latCell, flon, levels=levels, extend='both')
@@ -820,24 +803,6 @@ mag = np.sqrt(flon**2 + flat**2)
 cf = ax.tricontourf(lonCell, latCell, mag, levels=mlevels, extend='max')
 fig.colorbar(cf, ax=ax)
 k = k + 1
-
-# Plot u, v components of reconstructed field
-#ax = fig.add_subplot(rows, cols, k)
-#cf = ax.tricontourf(lonCell, latCell, fuu)
-#fig.colorbar(cf, ax=ax)
-#k = k + 1
-#
-#ax = fig.add_subplot(rows, cols, k)
-#cf = ax.tricontourf(lonCell, latCell, fvv)
-#fig.colorbar(cf, ax=ax)
-#k = k + 1
-#
-#ax = fig.add_subplot(rows, cols, k)
-#mag = np.sqrt(fuu**2 + fvv**2)
-#cf = ax.tricontourf(lonCell, latCell, mag)
-#fig.colorbar(cf, ax=ax)
-#k = k + 1
-
 
 # Plot differences 
 ax = fig.add_subplot(rows, cols, k)
@@ -868,3 +833,4 @@ k = k + 1
 
 plt.savefig('field.png')
 plt.close()
+
