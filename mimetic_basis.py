@@ -5,6 +5,7 @@ import random
 from shapely.geometry.polygon import Polygon
 from shapely.geometry import Point
 import netCDF4 as nc4
+from scipy.sparse import coo_array
 
 np.seterr(divide='ignore', invalid='ignore')
  
@@ -644,6 +645,8 @@ if not skip_remap:
     latVertex_source = source_mesh.variables['latVertex'][:]
     lonVertex_target = target_mesh.variables['lonVertex'][:]
     latVertex_target = target_mesh.variables['latVertex'][:]
+    lonEdge_source = source_mesh.variables['lonEdge'][:]
+    latEdge_source = source_mesh.variables['latEdge'][:]
     lonEdge_target = target_mesh.variables['lonEdge'][:]
     latEdge_target = target_mesh.variables['latEdge'][:]
     lonCell_source = source_mesh.variables['lonCell'][:]
@@ -742,7 +745,9 @@ if not skip_remap:
     
     # get number of edges
     nEdges_target = lonEdge_target.size
+    nEdges_source = lonEdge_source.size
     print(nEdges_target)
+    print(nEdges_source)
     
     t, w = np.polynomial.legendre.leggauss(5)
     t = np.expand_dims(t, axis=1)
@@ -750,6 +755,13 @@ if not skip_remap:
     t_start = time.time()
 
     btf_target = np.zeros((nEdges_target))
+    max_sub_edges = nb_sub_edges.shape[1]
+    max_source_edges = edgesOnCell_source.shape[1]
+
+    data = np.zeros((nEdges_target*max_sub_edges*max_source_edges))
+    row = np.zeros_like(data, dtype=np.int64)
+    col = np.zeros_like(data, dtype=np.int64)
+    m = 0
     for edge in range(nEdges_target): 
     
         print(edge)
@@ -766,44 +778,40 @@ if not skip_remap:
         uVertex, vVertex = gnomonic_forward(lonVertex_target[vertices], latVertex_target[vertices], lon0, lat0)
         nu_target, nv_target = edge_normal(uVertex[iEdge], vVertex[iEdge], uVertex[iEdgep1], vVertex[iEdgep1])
 
-        #fig = plt.figure()
-        #ax = fig.add_subplot(111)
-        #ax.scatter(uVertex, vVertex, marker='o')
-        #for i in range(n):
-        #    ip1 = (i+1) % n
-        #    if i == iEdge:
-        #      c = 'b'
-        #    else:
-        #      c = 'k'
-        #    ax.plot([uVertex[i], uVertex[ip1]], [vVertex[i], vVertex[ip1]],color=c)
-        #ax.quiver(0.5*(uVertex[iEdge]+uVertex[iEdgep1]), 0.5*(vVertex[iEdge]+vVertex[iEdgep1]), nu_target, nv_target)
-        
- 
-        jEdge = iEdge-1
+        jEdge = iEdge-1 # this is important fot getting edge right in cells_assoc, lon/lat_sub_edge
         n_sub_edges = nb_sub_edges[cell_target, jEdge] 
+
+        plot_edge = False
+        #if n_sub_edges < 5:
+        #    plot_edge = False
+        #else:
+        #    plot_edge = True
+        
+        if plot_edge:
+            fig = plt.figure()
+            ax = fig.add_subplot(111)
+            ax.scatter(uVertex, vVertex, marker='o', color='k', alpha=0.5)
+            for i in range(n):
+                ip1 = (i+1) % n
+                ax.plot([uVertex[i], uVertex[ip1]], [vVertex[i], vVertex[ip1]],color='k', alpha=0.5)
+            ax.quiver(0.5*(uVertex[iEdge]+uVertex[iEdgep1]), 0.5*(vVertex[iEdge]+vVertex[iEdgep1]), nu_target, nv_target)
+        
         for sub_edge in range(n_sub_edges):
             print(f'   {sub_edge}')
-    
+   
+            # Get vertices for sub edge source cell 
             sub_edge_cell = cells_assoc[cell_target, jEdge, sub_edge] - 1
-    
-            lat1_sub_edge = lat_sub_edge[cell_target, jEdge, sub_edge]
-            lon1_sub_edge = lon_sub_edge[cell_target, jEdge, sub_edge]
-            lat2_sub_edge = lat_sub_edge[cell_target, jEdge, sub_edge+1]
-            lon2_sub_edge = lon_sub_edge[cell_target, jEdge, sub_edge+1]        
-    
             n = nEdgesOnCell_source[sub_edge_cell]
             vertices = verticesOnCell_source[sub_edge_cell, 0:n] - 1
             vertices = np.roll(vertices, 1) # this is important to account for how mpas defines vertices on an edge
             vertices_p1 = np.roll(vertices, -1)
         
-            # Cell vertex coordinates in u, v
+            # Cell vertex coordinates and edge normals in u, v
             uVertex, vVertex = gnomonic_forward(lonVertex_source[vertices], latVertex_source[vertices], lon0, lat0)
             uv = np.vstack((uVertex, vVertex)).T # package for call to watchpress, vector_basis etc
- 
-            #for i in range(n):
-            #    ip1 = (i+1) % n
-            #    ax.plot([uVertex[i], uVertex[ip1]], [vVertex[i], vVertex[ip1]],color=color_list[sub_edge])
-            #ax.scatter(uVertex, vVertex, marker='o', color=color_list[sub_edge])
+            i = np.arange(n)
+            ip1 = (i+1) % n
+            nu, nv = edge_normal(uv[i,0] ,uv[i,1], uv[ip1,0], uv[ip1,1])
 
             # Evaluate watchpress functions at edge quadrature points (for normalization)
             lon1 = np.expand_dims(lonVertex_source[vertices], axis=1)
@@ -812,16 +820,24 @@ if not skip_remap:
             lat2 = np.expand_dims(latVertex_source[vertices_p1], axis=1)
             ds, u, v =  gnomonic_integration(lon0, lat0, lon1, lat1, lon2, lat2, t)
             phi = wachpress(n, uv, u, v, method='area')
-        
+            
             # Evaluate watchpress functions at sub-edge quadrature points from target edge in u,v
+            lat1_sub_edge = lat_sub_edge[cell_target, jEdge, sub_edge]
+            lon1_sub_edge = lon_sub_edge[cell_target, jEdge, sub_edge]
+            lat2_sub_edge = lat_sub_edge[cell_target, jEdge, sub_edge+1]
+            lon2_sub_edge = lon_sub_edge[cell_target, jEdge, sub_edge+1]        
             ds_quad, u_quad, v_quad = gnomonic_integration(lon0, lat0, lon1_sub_edge, lat1_sub_edge, lon2_sub_edge, lat2_sub_edge, t)
             phi_quad = wachpress(n, uv, u_quad.T, v_quad.T, method='area')
             ds_quad = np.squeeze(ds_quad)
 
-            ax.scatter(u_quad, v_quad, marker='.', color=color_list[sub_edge])
+            if plot_edge: 
+                ax.plot([uVertex[i], uVertex[ip1]], [vVertex[i], vVertex[ip1]],color=color_list[sub_edge], alpha=0.5)
+                ax.scatter(uVertex, vVertex, marker='o', color=color_list[sub_edge], alpha=0.5)
+                ax.scatter(u_quad, v_quad, marker='x', color=color_list[sub_edge])
+                ax.scatter(u, v, marker='.', color=color_list[sub_edge])
+                ax.quiver(0.5*(uv[i,0]+uv[ip1,0]), 0.5*(uv[i,1]+uv[ip1,1]), nu[i], nv[i], color=color_list[sub_edge])
         
             for i in range(n):
-                ip1 = (i+1) % n
                 edge_source = edgesOnCell_source[sub_edge_cell,i] - 1
         
                 # evaluate basis functions at quadrature points on edge
@@ -830,8 +846,7 @@ if not skip_remap:
                 Phiv = np.squeeze(Phiv)
         
                 # compute integral over edge for basis function normalization factor      
-                nu, nv = edge_normal(uv[i,0] ,uv[i,1], uv[ip1,0], uv[ip1,1])
-                norm_integral = -np.sum(w*(Phiu*nu + Phiv*nv)*ds[i,:])
+                norm_integral = np.sum(w*(Phiu*nu[i] + Phiv*nv[i])*ds[i,:])
         
                 # compute normalized basis functions at cell centers 
                 Phiu, Phiv = vector_basis(n, i, uv, phi_quad, norm_factor=norm_integral)
@@ -839,17 +854,27 @@ if not skip_remap:
                 Phiv = np.squeeze(Phiv)
         
                 # compute reconstruction 
-                coef = edgeSignOnCell_source[sub_edge_cell, i]*dvEdge_source[edge_source]*btf_source[edge_source]
-                btf_target[edge] = btf_target[edge] + coef*np.sum(w*(Phiu*nu_target + Phiv*nv_target)*ds_quad)
+                integral = np.sum(w*(Phiu*nu_target + Phiv*nv_target)*ds_quad)
+                coef = -edgeSignOnCell_source[sub_edge_cell, i]*dvEdge_source[edge_source]*integral/dvEdge_target[edge]
+                btf_target[edge] = btf_target[edge] + coef*btf_source[edge_source]
 
-        btf_target[edge] = btf_target[edge]/dvEdge_target[edge]
+                row[m] = edge
+                col[m] = edge_source
+                data[m] = coef 
+                m = m + 1
 
-        #ax.axis('equal')
-        #plt.savefig('test_cell.png')
-        #plt.close()
-        #raise SystemExit(0)
+        if plot_edge:
+            ax.axis('equal')
+            plt.savefig('test_cell.png',dpi=500)
+            plt.close()
+            raise SystemExit(0)
 
-print(np.round(time.time() - t_start, 3))
+    M = coo_array((data, (row, col)), shape=(nEdges_target, nEdges_source)).toarray()
+    btf_target_mv = M.dot(btf_source)
+
+    print(np.max(np.abs(btf_target - btf_target_mv)))
+
+    print(np.round(time.time() - t_start, 3))
 
 ############################################
 # Reconstruct MPAS edge field at cell centers 
@@ -918,9 +943,12 @@ for cell in range(nCells):
     vertices_p1 = np.roll(vertices, -1)
 
 
-    # Cell vertex coordinates in u, v
+    # Cell vertex coordinates and edge normals in u, v
     uVertex, vVertex = gnomonic_forward(lonVertex[vertices], latVertex[vertices], lon0, lat0)
     uv = np.vstack((uVertex, vVertex)).T # package for call to watchpress, vector_basis etc
+    i = np.arange(n)
+    ip1 = (i+1) % n
+    nu, nv = edge_normal(uv[i,0] ,uv[i,1], uv[ip1,0], uv[ip1,1])
 
     # Evaluate watchpress functions at cell center coordinates in u,v
     uCell, vCell = gnomonic_forward(lonCell[cell], latCell[cell], lon0, lat0)
@@ -948,14 +976,13 @@ for cell in range(nCells):
         Phiv = np.squeeze(Phiv)
 
         # compute integral over edge for basis function normalization factor      
-        nu, nv = edge_normal(uv[i,0] ,uv[i,1], uv[ip1,0], uv[ip1,1])
-        integral = -np.sum(w*(Phiu*nu + Phiv*nv)*ds[i,:], axis=0)
+        integral = np.sum(w*(Phiu*nu[i] + Phiv*nv[i])*ds[i,:], axis=0)
 
         # compute normalized basis functions at cell centers 
         Phiu, Phiv = vector_basis(n, i, uv, phi_cell , norm_factor=integral)
 
         # compute reconstruction at cell center
-        coef = edgeSignOnCell[cell, i]*dvEdge[edge]*barotropicThicknessFlux[edge]
+        coef = -edgeSignOnCell[cell, i]*dvEdge[edge]*barotropicThicknessFlux[edge]
         fu = fu + coef*Phiu
         fv = fv + coef*Phiv
 
