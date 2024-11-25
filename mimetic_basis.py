@@ -688,7 +688,7 @@ if not skip_remap:
     # Set up figure
     rows = 2
     cols = 3
-    fig = plt.figure(figsize=(18, 4.5*nrows))
+    fig = plt.figure(figsize=(18, 4.5*rows))
     k = 1
     vmin = -2.5
     vmax = 3.5
@@ -997,7 +997,7 @@ print(np.round(time.time() - t_start, 3))
 # Set up figure
 rows = 3
 cols = 3
-fig = plt.figure(figsize=(18, 4.5*nrows))
+fig = plt.figure(figsize=(18, 4.5*rows))
 k = 1
 vmin = -2.5
 vmax = 3.5
