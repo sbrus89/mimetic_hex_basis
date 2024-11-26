@@ -14,20 +14,53 @@ R= 6371220.0
 
 def area(x, y, x1, y1, x2, y2):
 
+    x_shape = x.shape
     xr = x.ravel()
     yr = y.ravel()
-    M = np.ones((xr.size, 3, 3))
-    M[:, 1, 0] = xr
-    M[:, 2, 0] = yr
+    M = np.ones((xr.size, 3, 3, x1.size))
 
-    M[:, 1, 1] = x1
-    M[:, 2, 1] = y1
+    npts = xr.size
+    nv = x1.size
 
-    M[:, 1, 2] = x2
-    M[:, 2, 2] = y2
+    xr = np.repeat(xr[:,np.newaxis], nv, axis=1)
+    yr = np.repeat(yr[:,np.newaxis], nv, axis=1)
+
+    M[:, 1, 0, :] = xr
+    M[:, 2, 0, :] = yr
+
+    M[:, 1, 1, :] = x1
+    M[:, 2, 1, :] = y1
+
+    M[:, 1, 2, :] = x2
+    M[:, 2, 2, :] = y2
+
+    M = np.transpose(M, (0, 3, 1, 2)).reshape((npts, nv, 3, 3))
 
     A = 0.5*np.linalg.det(M)
-    A = A.reshape(x.shape)
+    out_shape = np.append(x.shape,(nv))
+    A = A.reshape(out_shape)
+    A = np.squeeze(A)
+
+    return A
+
+def area_c(xim1, yim1, xi, yi, xip1, yip1):
+
+    M = np.ones((3, 3, xi.size))
+
+
+    M[1, 0, :] = xim1
+    M[2, 0, :] = yim1
+
+    M[1, 1, :] = xi
+    M[2, 1, :] = yi
+
+    M[1, 2, :] = xip1
+    M[2, 2, :] = yip1
+
+    M = np.transpose(M, (2, 0, 1))
+
+    A = 0.5*np.linalg.det(M)
+
     return A
 
 def vector_basis(n, i, v, phi, norm_factor=1.0):
@@ -39,6 +72,26 @@ def vector_basis(n, i, v, phi, norm_factor=1.0):
     Phiy = (v[i,1] - v[i-1,1])*phi[i,:,:] + (v[ip1,1] - v[ip2,1])*phi[ip1,:,:]
 
     return Phix/norm_factor, Phiy/norm_factor
+
+def wachpress_vec(n, v, xx, yy):
+
+    i = np.arange(0, n)
+    ip1 = (i+1) % n
+    C = area_c(v[i-1,0], v[i-1,1], v[i,0], v[i,1], v[ip1,0], v[ip1,1])
+    A = area(xx, yy, v[i,0], v[i,1], v[ip1,0], v[ip1,1])
+    A = A[:,:,:, np.newaxis]
+    mask = np.ones((n,n))
+    j = np.arange(-1,n-1)
+    mask[j,j] = 0
+    mask[j,j-1] = 0
+    A = A*mask
+    w = C[np.newaxis,np.newaxis,:]*np.prod(A,axis=-1)
+    sum_w = np.sum(w, axis=-1)
+    phi = w/sum_w[:,:,np.newaxis]
+    phi = np.transpose(phi, (2, 0, 1))
+
+    print(phi.shape)
+    return phi
 
 def wachpress(n,v,xx,yy,method='area'):
 
@@ -80,7 +133,7 @@ def wachpress(n,v,xx,yy,method='area'):
                         Ap = np.multiply(Ap,A) 
         
                 C = area(np.array([v[jm1,0]]), np.array([v[jm1,1]]), v[j,0], v[j,1], v[jp1,0], v[jp1,1])
-                wj = C[0]*Ap
+                wj = C*Ap
         
                 if j == i:
                     wi = np.copy(wj)
@@ -283,10 +336,14 @@ if not skip_test:
     ############################################
     
     # Compute Wachpress coordinates
+    phi_vec = wachpress_vec(n, v, xx, yy)
     phi, rx, ry = wachpress(n, v, xx, yy, method='distance')
     phi_area = wachpress(n, v, xx, yy, method='area')
     phi[:,~mask] = np.nan
     phi_area[:,~mask] = np.nan
+    phi_vec[:,~mask] = np.nan
+    print(phi_vec)
+    print(phi_area)
     
     # Ensure both distance and area methods are equivalent
     diff = np.nanmax(np.abs(phi-phi_area))
@@ -294,6 +351,14 @@ if not skip_test:
         print("Distance and area methods do not agree")
         print(diff)
         raise SystemExit(0)
+
+    # Ensure both vectorized and standard functions are equivalent
+    diff = np.nanmax(np.abs(phi-phi_vec))
+    if diff > 1e-15:
+        print("Distance and area methods do not agree")
+        print(diff)
+        raise SystemExit(0)
+    
     
     # Compute gradients
     phix = np.zeros((n,xx.shape[0],xx.shape[1]))
