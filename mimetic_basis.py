@@ -5,7 +5,7 @@ import random
 from shapely.geometry.polygon import Polygon
 from shapely.geometry import Point
 import netCDF4 as nc4
-from scipy.sparse import coo_array
+#from scipy.sparse import coo_array
 
 np.seterr(divide='ignore', invalid='ignore')
  
@@ -77,16 +77,37 @@ def wachpress_vec(n, v, xx, yy):
 
     i = np.arange(0, n)
     ip1 = (i+1) % n
+
     C = area_c(v[i-1,0], v[i-1,1], v[i,0], v[i,1], v[ip1,0], v[ip1,1])
+    print(C.shape)
     A = area(xx, yy, v[i,0], v[i,1], v[ip1,0], v[ip1,1])
-    A = A[:,:,:, np.newaxis]
-    mask = np.ones((n,n))
+    A = A.reshape((xx.size,n))
+    print(A.shape)
+    A = A[:,:, np.newaxis]
+    print(A.shape)
+
+    print(np.max(np.abs(C)))
+    print(np.max(np.abs(A)))
+
+    mask = np.zeros((n,n), dtype=np.int32)
     j = np.arange(-1,n-1)
-    mask[j,j] = 0
-    mask[j,j-1] = 0
-    A = A*mask
-    w = C[np.newaxis,np.newaxis,:]*np.prod(A,axis=-1)
+    mask[j,j] = 1
+    mask[j,j-1] = 1
+    print(mask)
+    #np.ma.masked_array(A,mask)
+    #A = A*mask
+    A = np.squeeze(A[:,mask])
+    print(A.shape)
+    A = np.prod(A,axis=-1)
+    print(np.max(np.abs(A)))
+
+    w = C[np.newaxis,np.newaxis,:]*A
+    print(w.shape)
+    print(np.max(np.abs(w)))
     sum_w = np.sum(w, axis=-1)
+    print(sum_w.shape)
+    print(np.max(np.abs(sum_w)))
+
     phi = w/sum_w[:,:,np.newaxis]
     phi = np.transpose(phi, (2, 0, 1))
 
@@ -342,8 +363,6 @@ if not skip_test:
     phi[:,~mask] = np.nan
     phi_area[:,~mask] = np.nan
     phi_vec[:,~mask] = np.nan
-    print(phi_vec)
-    print(phi_area)
     
     # Ensure both distance and area methods are equivalent
     diff = np.nanmax(np.abs(phi-phi_area))
@@ -354,11 +373,13 @@ if not skip_test:
 
     # Ensure both vectorized and standard functions are equivalent
     diff = np.nanmax(np.abs(phi-phi_vec))
+    print(diff)
     if diff > 1e-15:
-        print("Distance and area methods do not agree")
+        print("Distance and vectorized area methods do not agree")
         print(diff)
         raise SystemExit(0)
-    
+
+    raise SystemExit(0)    
     
     # Compute gradients
     phix = np.zeros((n,xx.shape[0],xx.shape[1]))
