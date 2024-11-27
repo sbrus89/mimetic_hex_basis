@@ -261,7 +261,7 @@ def gnomonic_integration(lon0, lat0, lon1, lat1, lon2, lat2, t):
     dydlon =  R*np.cos(lat)*np.cos(lon)
 
     dzdlat = R*np.cos(lat)
-    dzdlon = 0.0
+    #dzdlon = 0.0
 
     dlondu, dlondv, dlatdu, dlatdv = latlon_uv_jacobian(u, v, lon0, lat0)
 
@@ -270,7 +270,7 @@ def gnomonic_integration(lon0, lat0, lon1, lat1, lon2, lat2, t):
 
     dxdt = dxdlat*dlatdt + dxdlon*dlondt
     dydt = dydlat*dlatdt + dydlon*dlondt
-    dzdt = dzdlat*dlatdt + dzdlon*dlondt
+    dzdt = dzdlat*dlatdt #+ dzdlon*dlondt
 
     ds = np.sqrt(np.square(dxdt) + np.square(dydt) + np.square(dzdt))
 
@@ -307,6 +307,313 @@ def transform_vector_components_latlon_uv(lon0, lat0, lon, lat, flon, flat):
     #fv = dlondv*flon + dlatdv*flat    
 
     return fu, fv
+
+def remap_edges(source, target, edge_mapping, source_field, target_field):
+
+    color_list = ['tab:blue', 'tab:orange', 'tab:green', 'tab:red', 'tab:purple', 'tab:brown']
+
+    lon0 = 0.5*(np.max(source.lonVertex) + np.min(source.lonVertex))
+    lat0 = 0.5*(np.max(source.latVertex) + np.min(source.latVertex))
+    
+    # get number of edges
+    print(target.nEdges)
+    print(source.nEdges)
+    
+    t, w = np.polynomial.legendre.leggauss(5)
+    t = np.expand_dims(t, axis=1)
+    
+    t_start = time.time()
+
+    target_field.edge = np.zeros((target.nEdges))
+    max_sub_edges = edge_mapping.nb_sub_edges.shape[1]
+    max_source_edges = source.edgesOnCell.shape[1]
+
+    data = np.zeros((target.nEdges*max_sub_edges*max_source_edges))
+    row = np.zeros_like(data, dtype=np.int64)
+    col = np.zeros_like(data, dtype=np.int64)
+    m = 0
+    for edge in range(target.nEdges): 
+    
+        print(edge)
+   
+        # Find local edge number for global edge on cell 0 
+        cell_target = target.cellsOnEdge[edge,0] - 1
+        iEdge = np.where(target.edgesOnCell[cell_target,:] == edge + 1)[0][0] 
+        n = target.nEdgesOnCell[cell_target]
+        iEdgep1 = (iEdge+1) % n
+   
+        # Get normal vector for target edge 
+        vertices = target.verticesOnCell[cell_target, 0:n] - 1 
+        vertices = np.roll(vertices, 1) # this is important to account for how mpas defines vertices on an edge
+        uVertex, vVertex = gnomonic_forward(target.lonVertex[vertices], target.latVertex[vertices], lon0, lat0)
+        nu_target, nv_target = edge_normal(uVertex[iEdge], vVertex[iEdge], uVertex[iEdgep1], vVertex[iEdgep1])
+
+        jEdge = iEdge-1 # this is important fot getting edge right in cells_assoc, lon/lat_sub_edge
+        n_sub_edges = edge_mapping.nb_sub_edges[cell_target, jEdge] 
+
+        plot_edge = False
+        #if n_sub_edges < 5:
+        #    plot_edge = False
+        #else:
+        #    plot_edge = True
+        
+        if plot_edge:
+            fig = plt.figure()
+            ax = fig.add_subplot(111)
+            ax.scatter(uVertex, vVertex, marker='o', color='k', alpha=0.5)
+            for i in range(n):
+                ip1 = (i+1) % n
+                ax.plot([uVertex[i], uVertex[ip1]], [vVertex[i], vVertex[ip1]],color='k', alpha=0.5)
+            ax.quiver(0.5*(uVertex[iEdge]+uVertex[iEdgep1]), 0.5*(vVertex[iEdge]+vVertex[iEdgep1]), nu_target, nv_target)
+        
+        for sub_edge in range(n_sub_edges):
+            print(f'   {sub_edge}')
+   
+            # Get vertices for sub edge source cell 
+            sub_edge_cell = edge_mapping.cells_assoc[cell_target, jEdge, sub_edge] - 1
+            n = source.nEdgesOnCell[sub_edge_cell]
+            vertices = source.verticesOnCell[sub_edge_cell, 0:n] - 1
+            vertices = np.roll(vertices, 1) # this is important to account for how mpas defines vertices on an edge
+            vertices_p1 = np.roll(vertices, -1)
+        
+            # Cell vertex coordinates and edge normals in u, v
+            uVertex, vVertex = gnomonic_forward(source.lonVertex[vertices], source.latVertex[vertices], lon0, lat0)
+            uv = np.vstack((uVertex, vVertex)).T # package for call to watchpress, vector_basis etc
+            i = np.arange(n)
+            ip1 = (i+1) % n
+            nu, nv = edge_normal(uv[i,0] ,uv[i,1], uv[ip1,0], uv[ip1,1])
+
+            # Evaluate watchpress functions at edge quadrature points (for normalization)
+            lon1 = np.expand_dims(source.lonVertex[vertices], axis=1)
+            lat1 = np.expand_dims(source.latVertex[vertices], axis=1)
+            lon2 = np.expand_dims(source.lonVertex[vertices_p1], axis=1)
+            lat2 = np.expand_dims(source.latVertex[vertices_p1], axis=1)
+            ds, u, v =  gnomonic_integration(lon0, lat0, lon1, lat1, lon2, lat2, t)
+            phi = wachpress_vec(n, uv, u, v)
+            
+            # Evaluate watchpress functions at sub-edge quadrature points from target edge in u,v
+            lat1_sub_edge = edge_mapping.lat_sub_edge[cell_target, jEdge, sub_edge]
+            lon1_sub_edge = edge_mapping.lon_sub_edge[cell_target, jEdge, sub_edge]
+            lat2_sub_edge = edge_mapping.lat_sub_edge[cell_target, jEdge, sub_edge+1]
+            lon2_sub_edge = edge_mapping.lon_sub_edge[cell_target, jEdge, sub_edge+1]        
+            ds_quad, u_quad, v_quad = gnomonic_integration(lon0, lat0, lon1_sub_edge, lat1_sub_edge, lon2_sub_edge, lat2_sub_edge, t)
+            phi_quad = wachpress_vec(n, uv, u_quad.T, v_quad.T)
+            ds_quad = np.squeeze(ds_quad)
+
+            if plot_edge: 
+                ax.plot([uVertex[i], uVertex[ip1]], [vVertex[i], vVertex[ip1]],color=color_list[sub_edge], alpha=0.5)
+                ax.scatter(uVertex, vVertex, marker='o', color=color_list[sub_edge], alpha=0.5)
+                ax.scatter(u_quad, v_quad, marker='x', color=color_list[sub_edge])
+                ax.scatter(u, v, marker='.', color=color_list[sub_edge])
+                ax.quiver(0.5*(uv[i,0]+uv[ip1,0]), 0.5*(uv[i,1]+uv[ip1,1]), nu[i], nv[i], color=color_list[sub_edge])
+        
+            for i in range(n):
+                edge_source = source.edgesOnCell[sub_edge_cell,i] - 1
+        
+                # evaluate basis functions at quadrature points on edge
+                Phiu, Phiv = vector_basis(n, i, uv, np.expand_dims(phi[:,i,:], -1), norm_factor=1.0)
+                Phiu = np.squeeze(Phiu)
+                Phiv = np.squeeze(Phiv)
+        
+                # compute integral over edge for basis function normalization factor      
+                norm_integral = np.sum(w*(Phiu*nu[i] + Phiv*nv[i])*ds[i,:])
+        
+                # compute normalized basis functions at cell centers 
+                Phiu, Phiv = vector_basis(n, i, uv, phi_quad, norm_factor=norm_integral)
+                Phiu = np.squeeze(Phiu)
+                Phiv = np.squeeze(Phiv)
+        
+                # compute reconstruction 
+                integral = np.sum(w*(Phiu*nu_target + Phiv*nv_target)*ds_quad)
+                coef = -source.edgeSignOnCell[sub_edge_cell, i]*source.dvEdge[edge_source]*integral/target.dvEdge[edge]
+                target_field.edge[edge] = target_field.edge[edge] + coef*source_field.edge[edge_source]
+
+                row[m] = edge
+                col[m] = edge_source
+                data[m] = coef 
+                m = m + 1
+
+        if plot_edge:
+            ax.axis('equal')
+            plt.savefig('test_cell.png',dpi=500)
+            plt.close()
+            raise SystemExit(0)
+
+    M = coo_array((data, (row, col)), shape=(target.nEdges, source.nEdges)).toarray()
+    btf_target_mv = M.dot(source_field.edge)
+
+    print(np.max(np.abs(target_field.edge - btf_target_mv)))
+
+    print(np.round(time.time() - t_start, 3))
+
+
+def reconstruct_edges_to_centers(mesh, field_source, field_target):
+
+    t_start = time.time()
+    
+    # get number of cells and edges
+    print(mesh.nCells)
+    print(mesh.nEdges)
+    
+    # gnomonic projection center
+    lon0 = 0.5*(np.max(mesh.lonCell) + np.min(mesh.lonCell))
+    lat0 = 0.5*(np.max(mesh.latCell) + np.min(mesh.latCell))
+    
+    # quadrature points for computing the edge integral for the basis function normalization
+    t, w = np.polynomial.legendre.leggauss(5)
+    t = np.expand_dims(t, axis=1)
+    
+    field_target.zonal = np.zeros((mesh.nCells))
+    field_target.meridional = np.zeros((mesh.nCells))
+    #nCells = 0
+    for cell in range(mesh.nCells):
+        print(cell)
+    
+        n = mesh.nEdgesOnCell[cell]
+        vertices = mesh.verticesOnCell[cell, 0:n] - 1
+        vertices = np.roll(vertices, 1) # this is important to account for how mpas defines vertices on an edge
+        vertices_p1 = np.roll(vertices, -1)
+    
+    
+        # Cell vertex coordinates and edge normals in u, v
+        uVertex, vVertex = gnomonic_forward(mesh.lonVertex[vertices], mesh.latVertex[vertices], lon0, lat0)
+        uv = np.vstack((uVertex, vVertex)).T # package for call to watchpress, vector_basis etc
+        i = np.arange(n)
+        ip1 = (i+1) % n
+        nu, nv = edge_normal(uv[i,0] ,uv[i,1], uv[ip1,0], uv[ip1,1])
+    
+        # Evaluate watchpress functions at cell center coordinates in u,v
+        uCell, vCell = gnomonic_forward(mesh.lonCell[cell], mesh.latCell[cell], lon0, lat0)
+        uCell = np.expand_dims(np.asarray([uCell]), axis=0) # put single value in an array for call to watchpress
+        vCell = np.expand_dims(np.asarray([vCell]), axis=0)
+        phi_cell = wachpress_vec(n, uv, uCell, vCell)
+    
+        # Evaluate watchpress functions at quadrature points 
+        lon1 = np.expand_dims(mesh.lonVertex[vertices], axis=1)
+        lat1 = np.expand_dims(mesh.latVertex[vertices], axis=1)
+        lon2 = np.expand_dims(mesh.lonVertex[vertices_p1], axis=1)
+        lat2 = np.expand_dims(mesh.latVertex[vertices_p1], axis=1)
+        ds, u, v =  gnomonic_integration(lon0, lat0, lon1, lat1, lon2, lat2, t)
+        phi = wachpress_vec(n, uv, u, v)
+    
+        fu = np.zeros(uCell.shape)
+        fv = np.zeros(vCell.shape)
+        for i in range(n):
+            ip1 = (i+1) % n
+            edge = mesh.edgesOnCell[cell,i] - 1
+    
+            # evaluate basis functions at quadrature points
+            Phiu, Phiv = vector_basis(n, i, uv, np.expand_dims(phi[:,i,:], axis=-1), norm_factor=1.0)
+            Phiu = np.squeeze(Phiu)
+            Phiv = np.squeeze(Phiv)
+    
+            # compute integral over edge for basis function normalization factor      
+            integral = np.sum(w*(Phiu*nu[i] + Phiv*nv[i])*ds[i,:], axis=0)
+    
+            # compute normalized basis functions at cell centers 
+            Phiu, Phiv = vector_basis(n, i, uv, phi_cell , norm_factor=integral)
+    
+            # compute reconstruction at cell center
+            coef = -mesh.edgeSignOnCell[cell, i]*mesh.dvEdge[edge]*field_source.edge[edge]
+            fu = fu + coef*Phiu
+            fv = fv + coef*Phiv
+    
+        # compute lon lat vector components
+        field_target.zonal[cell], field_target.meridional[cell] = transform_vector_components_uv_latlon(lon0, lat0, mesh.lonCell[cell], mesh.latCell[cell], fu, fv)
+    
+    print(np.round(time.time() - t_start, 3))
+
+
+def plot_fields(mesh1, field1, mesh2, field2, fig_name):
+
+    same_mesh = False
+    if mesh1.nCells == mesh2.nCells:
+        same_mesh = True
+
+    if same_mesh:
+        rows = 3
+        plot_diff = True
+    else:
+        rows = 2
+        plot_diff = False
+
+    # Set up figure
+    cols = 3
+    fig = plt.figure(figsize=(18, 4.5*rows))
+    k = 1
+    vmin = -2.5
+    vmax = 3.5
+    levels = np.linspace(vmin, vmax, 10)
+    mlevels = np.linspace(0, vmax, 10)
+    
+    # Plot original RBF field
+    ax = fig.add_subplot(rows, cols, k)
+    cf = ax.tricontourf(mesh1.lonCell, mesh1.latCell, field1.zonal, levels=levels, extend='both')
+    ax.set_title('Zonal component')
+    ax.set_ylabel('RFB')
+    fig.colorbar(cf, ax=ax)
+    k = k + 1
+    
+    ax = fig.add_subplot(rows, cols, k)
+    cf = ax.tricontourf(mesh1.lonCell, mesh1.latCell, field1.meridional, levels=levels, extend='both')
+    ax.set_title('Meridonal component')
+    fig.colorbar(cf, ax=ax)
+    k = k + 1
+    
+    ax = fig.add_subplot(rows, cols, k)
+    mag1 = np.sqrt(field1.zonal**2 + field1.meridional**2)
+    cf = ax.tricontourf(mesh1.lonCell, mesh1.latCell, mag1, levels=mlevels, extend='max')
+    ax.set_title('Magnitude')
+    fig.colorbar(cf, ax=ax)
+    k = k + 1
+    
+    # Plot lat lon components of reconstructed field
+    ax = fig.add_subplot(rows, cols, k)
+    cf = ax.tricontourf(mesh2.lonCell, mesh2.latCell, field2.zonal, levels=levels, extend='both')
+    fig.colorbar(cf, ax=ax)
+    ax.set_ylabel('Mimetic interpolation')
+    k = k + 1
+    
+    ax = fig.add_subplot(rows, cols, k)
+    cf = ax.tricontourf(mesh2.lonCell, mesh2.latCell, field2.meridional, levels=levels, extend='both')
+    fig.colorbar(cf, ax=ax)
+    k = k + 1
+    
+    ax = fig.add_subplot(rows, cols, k)
+    mag2 = np.sqrt(field2.zonal**2 + field2.meridional**2)
+    cf = ax.tricontourf(mesh2.lonCell, mesh2.latCell, mag2, levels=mlevels, extend='max')
+    fig.colorbar(cf, ax=ax)
+    k = k + 1
+    
+    # Plot differences 
+    if plot_diff:
+        ax = fig.add_subplot(rows, cols, k)
+        diff = field2.zonal-field1.zonal
+        vrange = np.max(np.abs(diff)) 
+        levels = np.linspace(-vrange, vrange, 10)
+        cf = ax.tricontourf(mesh1.lonCell, mesh1.latCell, diff, cmap='RdBu', levels=levels) 
+        fig.colorbar(cf, ax=ax)
+        ax.set_ylabel('Mimetic-RBF')
+        k = k + 1
+        
+        ax = fig.add_subplot(rows, cols, k)
+        diff = field2.meridional-field1.meridional
+        vrange = np.max(np.abs(diff)) 
+        levels = np.linspace(-vrange, vrange, 10)
+        cf = ax.tricontourf(mesh1.lonCell, mesh1.latCell, diff, cmap='RdBu', levels=levels)
+        fig.colorbar(cf, ax=ax)
+        k = k + 1
+        
+        ax = fig.add_subplot(rows, cols, k)
+        diff = mag2-mag1
+        vrange = np.max(np.abs(diff)) 
+        levels = np.linspace(-vrange, vrange, 10)
+        cf = ax.tricontourf(mesh1.lonCell, mesh1.latCell, diff, cmap='RdBu', levels=levels)
+        fig.colorbar(cf, ax=ax)
+        k = k + 1
+    
+    plt.savefig(fig_name)
+    plt.close()
 
 #skip_test = True
 skip_test = False
@@ -726,6 +1033,59 @@ if not skip_test:
     d = 2.0*R*np.arcsin(np.sqrt(hav))
     print(d/1000.0)
 
+class Mesh:
+
+    def __init__(self, mesh_filename):
+
+        nc_mesh = nc4.Dataset(mesh_filename, 'r+')
+
+        self.lonVertex = nc_mesh.variables['lonVertex'][:]
+        self.latVertex = nc_mesh.variables['latVertex'][:]
+        self.lonEdge = nc_mesh.variables['lonEdge'][:]
+        self.latEdge = nc_mesh.variables['latEdge'][:]
+        self.lonCell = nc_mesh.variables['lonCell'][:]
+        self.latCell = nc_mesh.variables['latCell'][:]
+
+        self.lonVertex[self.lonVertex > np.pi] = self.lonVertex[self.lonVertex > np.pi] - 2.0*np.pi
+        self.lonCell[self.lonCell > np.pi] = self.lonCell[self.lonCell > np.pi] - 2.0*np.pi
+
+        self.cellsOnEdge = nc_mesh.variables['cellsOnEdge'][:]
+        self.edgesOnCell = nc_mesh.variables['edgesOnCell'][:]
+        self.verticesOnCell = nc_mesh.variables['verticesOnCell'][:]
+        self.nEdgesOnCell = nc_mesh.variables['nEdgesOnCell'][:]
+        self.edgeSignOnCell = nc_mesh.variables['edgeSignOnCell'][:]
+        self.verticesOnEdge = nc_mesh.variables['verticesOnEdge'][:]
+        self.dvEdge = nc_mesh.variables['dvEdge'][:]
+
+        self.nEdges = self.lonEdge.size
+        self.nCells = self.lonCell.size
+
+        nc_mesh.close()
+
+class Mapping:
+
+    def __init__(self, edge_information_filename):
+
+        edge_info = nc4.Dataset(edge_information_filename, 'r+')
+
+        self.nb_sub_edges = edge_info.variables['nb_sub_edge'][:]
+        self.cells_assoc = edge_info.variables['cells_assoc'][:]
+        self.lat_sub_edge = edge_info.variables['lat_sub_edge'][:]
+        self.lon_sub_edge = edge_info.variables['lon_sub_edge'][:] 
+
+        edge_info.close()
+
+class Field:
+
+    def __init__(self, field_filename):
+
+        nc_file = nc4.Dataset(field_filename, 'r+')
+
+        self.edge = np.squeeze(nc_file.variables['barotropicThicknessFlux'][:])
+        self.zonal = np.squeeze(nc_file.variables['barotropicThicknessFluxZonal'][:])
+        self.meridional = np.squeeze(nc_file.variables['barotropicThicknessFluxMeridional'][:])
+
+        nc_file.close()
 
 ############################################
 # Remap MPAS edge field from 16km to 32km 
@@ -734,451 +1094,35 @@ if not skip_test:
 skip_remap = False
 if not skip_remap:
 
-    color_list = ['tab:blue', 'tab:orange', 'tab:green', 'tab:red', 'tab:purple', 'tab:brown']
-
     source_mesh_filename = 'soma_16km_mpas_mesh_with_rbf_weights.nc'
-    source_mesh = nc4.Dataset(source_mesh_filename, 'r+')
     target_mesh_filename = 'soma_32km_mpas_mesh_with_rbf_weights.nc'
-    target_mesh = nc4.Dataset(target_mesh_filename, 'r+')
     edge_information_filename = 'target_edge.nc'
-    edge_info = nc4.Dataset(edge_information_filename, 'r+')
-    
-    # read in target edge information
-    nb_sub_edges = edge_info.variables['nb_sub_edge'][:]
-    cells_assoc = edge_info.variables['cells_assoc'][:]
-    lat_sub_edge = edge_info.variables['lat_sub_edge'][:]
-    lon_sub_edge = edge_info.variables['lon_sub_edge'][:] 
-    
-    # read in mpas mesh coordinates
-    lonVertex_source = source_mesh.variables['lonVertex'][:]
-    latVertex_source = source_mesh.variables['latVertex'][:]
-    lonVertex_target = target_mesh.variables['lonVertex'][:]
-    latVertex_target = target_mesh.variables['latVertex'][:]
-    lonEdge_source = source_mesh.variables['lonEdge'][:]
-    latEdge_source = source_mesh.variables['latEdge'][:]
-    lonEdge_target = target_mesh.variables['lonEdge'][:]
-    latEdge_target = target_mesh.variables['latEdge'][:]
-    lonCell_source = source_mesh.variables['lonCell'][:]
-    latCell_source = source_mesh.variables['latCell'][:]
-    lonCell_target = target_mesh.variables['lonCell'][:]
-    latCell_target = target_mesh.variables['latCell'][:]
-    
-    
-    # 0,360 -> -180,180 adjustment
-    lonVertex_source[lonVertex_source > np.pi] = lonVertex_source[lonVertex_source > np.pi] - 2.0*np.pi
-    lonVertex_target[lonVertex_target > np.pi] = lonVertex_target[lonVertex_target > np.pi] - 2.0*np.pi
-    lonCell_source[lonCell_source > np.pi] = lonCell_source[lonCell_source > np.pi] - 2.0*np.pi
-    lonCell_target[lonCell_target > np.pi] = lonCell_target[lonCell_target > np.pi] - 2.0*np.pi
-    lon_sub_edge[lon_sub_edge > np.pi] = lon_sub_edge[lon_sub_edge > np.pi] - 2.0*np.pi
-    
-    # read in mesh connectivity information
-    cellsOnEdge_target = target_mesh.variables['cellsOnEdge'][:]
-    edgesOnCell_target = target_mesh.variables['edgesOnCell'][:]
-    verticesOnCell_target = target_mesh.variables['verticesOnCell'][:]
-    nEdgesOnCell_target= target_mesh.variables['nEdgesOnCell'][:]
-    
-    edgesOnCell_source = source_mesh.variables['edgesOnCell'][:]
-    edgeSignOnCell_source = source_mesh.variables['edgeSignOnCell'][:]
-    nEdgesOnCell_source = source_mesh.variables['nEdgesOnCell'][:]
-    verticesOnEdge_source = source_mesh.variables['verticesOnEdge'][:]
-    verticesOnCell_source = source_mesh.variables['verticesOnCell'][:]
-    dvEdge_source = source_mesh.variables['dvEdge'][:]
-    dvEdge_target = target_mesh.variables['dvEdge'][:]
-    
-    # read in fields
-    btf_source = np.squeeze(source_mesh.variables['barotropicThicknessFlux'][:])
-    btfZonal_source = np.squeeze(source_mesh.variables['barotropicThicknessFluxZonal'][:])
-    btfMeridional_source = np.squeeze(source_mesh.variables['barotropicThicknessFluxMeridional'][:])
-    btfZonal_target = np.squeeze(target_mesh.variables['barotropicThicknessFluxZonal'][:])
-    btfMeridional_target = np.squeeze(target_mesh.variables['barotropicThicknessFluxMeridional'][:])
-    source_mesh.close()
-    target_mesh.close()
-    
-    # Set up figure
-    rows = 2
-    cols = 3
-    fig = plt.figure(figsize=(18, 4.5*rows))
-    k = 1
-    vmin = -2.5
-    vmax = 3.5
-    levels = np.linspace(vmin, vmax, 10)
-    mlevels = np.linspace(0, vmax, 10)
-    
-    # Plot 16km RBF field
-    ax = fig.add_subplot(rows, cols, k)
-    cf = ax.tricontourf(lonCell_source, latCell_source, btfZonal_source, levels=levels, extend='both')
-    ax.set_title('Zonal component')
-    ax.set_ylabel('RFB')
-    fig.colorbar(cf, ax=ax)
-    k = k + 1
-    
-    ax = fig.add_subplot(rows, cols, k)
-    cf = ax.tricontourf(lonCell_source, latCell_source, btfMeridional_source, levels=levels, extend='both')
-    ax.set_title('Meridonal component')
-    fig.colorbar(cf, ax=ax)
-    k = k + 1
-    
-    ax = fig.add_subplot(rows, cols, k)
-    mag_rbf = np.sqrt(btfZonal_source**2 + btfMeridional_source**2)
-    cf = ax.tricontourf(lonCell_source, latCell_source, mag_rbf, levels=mlevels, extend='max')
-    ax.set_title('Magnitude')
-    fig.colorbar(cf, ax=ax)
-    k = k + 1
-    
-    # Plot 32km RBF field
-    ax = fig.add_subplot(rows, cols, k)
-    cf = ax.tricontourf(lonCell_target, latCell_target, btfZonal_target, levels=levels, extend='both')
-    ax.set_title('Zonal component')
-    ax.set_ylabel('RFB')
-    fig.colorbar(cf, ax=ax)
-    k = k + 1
-    
-    ax = fig.add_subplot(rows, cols, k)
-    cf = ax.tricontourf(lonCell_target, latCell_target, btfMeridional_target, levels=levels, extend='both')
-    ax.set_title('Meridonal component')
-    fig.colorbar(cf, ax=ax)
-    k = k + 1
-    
-    ax = fig.add_subplot(rows, cols, k)
-    mag_rbf = np.sqrt(btfZonal_target**2 + btfMeridional_target**2)
-    cf = ax.tricontourf(lonCell_target, latCell_target, mag_rbf, levels=mlevels, extend='max')
-    ax.set_title('Magnitude')
-    fig.colorbar(cf, ax=ax)
-    k = k + 1
-    
-    plt.savefig('field_target_source_rbf.png')
-    plt.close()
-    
-    lon0 = 0.5*(np.max(lonVertex_source) + np.min(lonVertex_source))
-    lat0 = 0.5*(np.max(latVertex_source) + np.min(latVertex_source))
-    
-    # get number of edges
-    nEdges_target = lonEdge_target.size
-    nEdges_source = lonEdge_source.size
-    print(nEdges_target)
-    print(nEdges_source)
-    
-    t, w = np.polynomial.legendre.leggauss(5)
-    t = np.expand_dims(t, axis=1)
-    
-    t_start = time.time()
-
-    btf_target = np.zeros((nEdges_target))
-    max_sub_edges = nb_sub_edges.shape[1]
-    max_source_edges = edgesOnCell_source.shape[1]
-
-    data = np.zeros((nEdges_target*max_sub_edges*max_source_edges))
-    row = np.zeros_like(data, dtype=np.int64)
-    col = np.zeros_like(data, dtype=np.int64)
-    m = 0
-    for edge in range(nEdges_target): 
-    
-        print(edge)
    
-        # Find local edge number for global edge on cell 0 
-        cell_target = cellsOnEdge_target[edge,0] - 1
-        iEdge = np.where(edgesOnCell_target[cell_target,:] == edge + 1)[0][0] 
-        n = nEdgesOnCell_target[cell_target]
-        iEdgep1 = (iEdge+1) % n
-   
-        # Get normal vector for target edge 
-        vertices = verticesOnCell_target[cell_target, 0:n] - 1 
-        vertices = np.roll(vertices, 1) # this is important to account for how mpas defines vertices on an edge
-        uVertex, vVertex = gnomonic_forward(lonVertex_target[vertices], latVertex_target[vertices], lon0, lat0)
-        nu_target, nv_target = edge_normal(uVertex[iEdge], vVertex[iEdge], uVertex[iEdgep1], vVertex[iEdgep1])
+    # Create mesh, mapping, and field objects 
+    source = Mesh(source_mesh_filename)
+    target = Mesh(target_mesh_filename)
+    edge_mapping = Mapping(edge_information_filename)
+    source_field = Field(source_mesh_filename)
+    target_field = Field(target_mesh_filename) 
+    
+    plot_fields(source, source_field, target, target_field, 'field_target_source_rbf.png')
 
-        jEdge = iEdge-1 # this is important fot getting edge right in cells_assoc, lon/lat_sub_edge
-        n_sub_edges = nb_sub_edges[cell_target, jEdge] 
-
-        plot_edge = False
-        #if n_sub_edges < 5:
-        #    plot_edge = False
-        #else:
-        #    plot_edge = True
-        
-        if plot_edge:
-            fig = plt.figure()
-            ax = fig.add_subplot(111)
-            ax.scatter(uVertex, vVertex, marker='o', color='k', alpha=0.5)
-            for i in range(n):
-                ip1 = (i+1) % n
-                ax.plot([uVertex[i], uVertex[ip1]], [vVertex[i], vVertex[ip1]],color='k', alpha=0.5)
-            ax.quiver(0.5*(uVertex[iEdge]+uVertex[iEdgep1]), 0.5*(vVertex[iEdge]+vVertex[iEdgep1]), nu_target, nv_target)
-        
-        for sub_edge in range(n_sub_edges):
-            print(f'   {sub_edge}')
-   
-            # Get vertices for sub edge source cell 
-            sub_edge_cell = cells_assoc[cell_target, jEdge, sub_edge] - 1
-            n = nEdgesOnCell_source[sub_edge_cell]
-            vertices = verticesOnCell_source[sub_edge_cell, 0:n] - 1
-            vertices = np.roll(vertices, 1) # this is important to account for how mpas defines vertices on an edge
-            vertices_p1 = np.roll(vertices, -1)
-        
-            # Cell vertex coordinates and edge normals in u, v
-            uVertex, vVertex = gnomonic_forward(lonVertex_source[vertices], latVertex_source[vertices], lon0, lat0)
-            uv = np.vstack((uVertex, vVertex)).T # package for call to watchpress, vector_basis etc
-            i = np.arange(n)
-            ip1 = (i+1) % n
-            nu, nv = edge_normal(uv[i,0] ,uv[i,1], uv[ip1,0], uv[ip1,1])
-
-            # Evaluate watchpress functions at edge quadrature points (for normalization)
-            lon1 = np.expand_dims(lonVertex_source[vertices], axis=1)
-            lat1 = np.expand_dims(latVertex_source[vertices], axis=1)
-            lon2 = np.expand_dims(lonVertex_source[vertices_p1], axis=1)
-            lat2 = np.expand_dims(latVertex_source[vertices_p1], axis=1)
-            ds, u, v =  gnomonic_integration(lon0, lat0, lon1, lat1, lon2, lat2, t)
-            phi = wachpress_vec(n, uv, u, v)
-            
-            # Evaluate watchpress functions at sub-edge quadrature points from target edge in u,v
-            lat1_sub_edge = lat_sub_edge[cell_target, jEdge, sub_edge]
-            lon1_sub_edge = lon_sub_edge[cell_target, jEdge, sub_edge]
-            lat2_sub_edge = lat_sub_edge[cell_target, jEdge, sub_edge+1]
-            lon2_sub_edge = lon_sub_edge[cell_target, jEdge, sub_edge+1]        
-            ds_quad, u_quad, v_quad = gnomonic_integration(lon0, lat0, lon1_sub_edge, lat1_sub_edge, lon2_sub_edge, lat2_sub_edge, t)
-            phi_quad = wachpress_vec(n, uv, u_quad.T, v_quad.T)
-            ds_quad = np.squeeze(ds_quad)
-
-            if plot_edge: 
-                ax.plot([uVertex[i], uVertex[ip1]], [vVertex[i], vVertex[ip1]],color=color_list[sub_edge], alpha=0.5)
-                ax.scatter(uVertex, vVertex, marker='o', color=color_list[sub_edge], alpha=0.5)
-                ax.scatter(u_quad, v_quad, marker='x', color=color_list[sub_edge])
-                ax.scatter(u, v, marker='.', color=color_list[sub_edge])
-                ax.quiver(0.5*(uv[i,0]+uv[ip1,0]), 0.5*(uv[i,1]+uv[ip1,1]), nu[i], nv[i], color=color_list[sub_edge])
-        
-            for i in range(n):
-                edge_source = edgesOnCell_source[sub_edge_cell,i] - 1
-        
-                # evaluate basis functions at quadrature points on edge
-                Phiu, Phiv = vector_basis(n, i, uv, np.expand_dims(phi[:,i,:], -1), norm_factor=1.0)
-                Phiu = np.squeeze(Phiu)
-                Phiv = np.squeeze(Phiv)
-        
-                # compute integral over edge for basis function normalization factor      
-                norm_integral = np.sum(w*(Phiu*nu[i] + Phiv*nv[i])*ds[i,:])
-        
-                # compute normalized basis functions at cell centers 
-                Phiu, Phiv = vector_basis(n, i, uv, phi_quad, norm_factor=norm_integral)
-                Phiu = np.squeeze(Phiu)
-                Phiv = np.squeeze(Phiv)
-        
-                # compute reconstruction 
-                integral = np.sum(w*(Phiu*nu_target + Phiv*nv_target)*ds_quad)
-                coef = -edgeSignOnCell_source[sub_edge_cell, i]*dvEdge_source[edge_source]*integral/dvEdge_target[edge]
-                btf_target[edge] = btf_target[edge] + coef*btf_source[edge_source]
-
-                row[m] = edge
-                col[m] = edge_source
-                data[m] = coef 
-                m = m + 1
-
-        if plot_edge:
-            ax.axis('equal')
-            plt.savefig('test_cell.png',dpi=500)
-            plt.close()
-            raise SystemExit(0)
-
-    M = coo_array((data, (row, col)), shape=(nEdges_target, nEdges_source)).toarray()
-    btf_target_mv = M.dot(btf_source)
-
-    print(np.max(np.abs(btf_target - btf_target_mv)))
-
-    print(np.round(time.time() - t_start, 3))
+    remap_edges(source, target, edge_mapping, source_field, target_field)
+    
 
 ############################################
 # Reconstruct MPAS edge field at cell centers 
 ############################################
-t_start = time.time()
 mesh_filename = 'soma_32km_mpas_mesh_with_rbf_weights.nc'
-nc_mesh = nc4.Dataset(mesh_filename, 'r+')
-
-# read in mpas mesh coordinates
-nc_vars = nc_mesh.variables.keys()
-lonVertex = nc_mesh.variables['lonVertex'][:]
-latVertex = nc_mesh.variables['latVertex'][:]
-lonCell = nc_mesh.variables['lonCell'][:]
-latCell = nc_mesh.variables['latCell'][:]
-lonEdge = nc_mesh.variables['lonEdge'][:]
-latEdge = nc_mesh.variables['latEdge'][:]
-
-# 0,360 -> -180,180 adjustment
-lonCell[lonCell > np.pi] = lonCell[lonCell > np.pi] - 2.0*np.pi
-lonVertex[lonVertex > np.pi] = lonVertex[lonVertex > np.pi] - 2.0*np.pi
-
-# read in mesh connectivity information
-verticesOnEdge = nc_mesh.variables['verticesOnEdge'][:]
-verticesOnCell = nc_mesh.variables['verticesOnCell'][:]
-edgesOnCell = nc_mesh.variables['edgesOnCell'][:]
-nEdgesOnCell = nc_mesh.variables['nEdgesOnCell'][:]
-cellsOnEdge = nc_mesh.variables['cellsOnEdge'][:]
-edgeSignOnCell = nc_mesh.variables['edgeSignOnCell'][:]
-angleEdge = nc_mesh.variables['angleEdge'][:]
-dvEdge = nc_mesh.variables['dvEdge'][:]
+mesh = Mesh(mesh_filename)
+field_s = Field(mesh_filename)
+field_t = Field(mesh_filename)
 
 # read in fields
-if skip_remap:
-    barotropicThicknessFlux = np.squeeze(nc_mesh.variables['barotropicThicknessFlux'][:])
-else:
-    barotropicThicknessFlux = btf_target
-barotropicThicknessFluxZonal = np.squeeze(nc_mesh.variables['barotropicThicknessFluxZonal'][:])
-barotropicThicknessFluxMeridional = np.squeeze(nc_mesh.variables['barotropicThicknessFluxMeridional'][:])
-nc_mesh.close()
+if not skip_remap:
+    field_s.edge = target_field.edge
 
-# get number of cells and edges
-nCells = lonCell.size
-print(nCells)
-nEdges = barotropicThicknessFlux.size
-print(nEdges)
+reconstruct_edges_to_centers(mesh, field_s, field_t)
 
-# gnomonic projection center
-lon0 = 0.5*(np.max(lonCell) + np.min(lonCell))
-lat0 = 0.5*(np.max(latCell) + np.min(latCell))
-
-# quadrature points for computing the edge integral for the basis function normalization
-t, w = np.polynomial.legendre.leggauss(5)
-t = np.expand_dims(t, axis=1)
-
-flon = np.zeros((nCells))
-flat = np.zeros((nCells))
-fuu = np.zeros((nCells))
-fvv = np.zeros((nCells))
-#nCells = 0
-for cell in range(nCells):
-    print(cell)
-
-    n = nEdgesOnCell[cell]
-    vertices = verticesOnCell[cell, 0:n] - 1
-    vertices = np.roll(vertices, 1) # this is important to account for how mpas defines vertices on an edge
-    vertices_p1 = np.roll(vertices, -1)
-
-
-    # Cell vertex coordinates and edge normals in u, v
-    uVertex, vVertex = gnomonic_forward(lonVertex[vertices], latVertex[vertices], lon0, lat0)
-    uv = np.vstack((uVertex, vVertex)).T # package for call to watchpress, vector_basis etc
-    i = np.arange(n)
-    ip1 = (i+1) % n
-    nu, nv = edge_normal(uv[i,0] ,uv[i,1], uv[ip1,0], uv[ip1,1])
-
-    # Evaluate watchpress functions at cell center coordinates in u,v
-    uCell, vCell = gnomonic_forward(lonCell[cell], latCell[cell], lon0, lat0)
-    uCell = np.expand_dims(np.asarray([uCell]), axis=0) # put single value in an array for call to watchpress
-    vCell = np.expand_dims(np.asarray([vCell]), axis=0)
-    phi_cell = wachpress_vec(n, uv, uCell, vCell)
-
-    # Evaluate watchpress functions at quadrature points 
-    lon1 = np.expand_dims(lonVertex[vertices], axis=1)
-    lat1 = np.expand_dims(latVertex[vertices], axis=1)
-    lon2 = np.expand_dims(lonVertex[vertices_p1], axis=1)
-    lat2 = np.expand_dims(latVertex[vertices_p1], axis=1)
-    ds, u, v =  gnomonic_integration(lon0, lat0, lon1, lat1, lon2, lat2, t)
-    phi = wachpress_vec(n, uv, u, v)
-
-    fu = np.zeros(uCell.shape)
-    fv = np.zeros(vCell.shape)
-    for i in range(n):
-        ip1 = (i+1) % n
-        edge = edgesOnCell[cell,i] - 1
-
-        # evaluate basis functions at quadrature points
-        Phiu, Phiv = vector_basis(n, i, uv, np.expand_dims(phi[:,i,:], axis=-1), norm_factor=1.0)
-        Phiu = np.squeeze(Phiu)
-        Phiv = np.squeeze(Phiv)
-
-        # compute integral over edge for basis function normalization factor      
-        integral = np.sum(w*(Phiu*nu[i] + Phiv*nv[i])*ds[i,:], axis=0)
-
-        # compute normalized basis functions at cell centers 
-        Phiu, Phiv = vector_basis(n, i, uv, phi_cell , norm_factor=integral)
-
-        # compute reconstruction at cell center
-        coef = -edgeSignOnCell[cell, i]*dvEdge[edge]*barotropicThicknessFlux[edge]
-        fu = fu + coef*Phiu
-        fv = fv + coef*Phiv
-
-    fuu[cell] = fu
-    fvv[cell] = fv
-
-    # compute lon lat vector components
-    flon[cell], flat[cell] = transform_vector_components_uv_latlon(lon0, lat0, lonCell[cell], latCell[cell], fu, fv)
-
-print(np.round(time.time() - t_start, 3))
-
-# Set up figure
-rows = 3
-cols = 3
-fig = plt.figure(figsize=(18, 4.5*rows))
-k = 1
-vmin = -2.5
-vmax = 3.5
-levels = np.linspace(vmin, vmax, 10)
-mlevels = np.linspace(0, vmax, 10)
-
-# Plot original RBF field
-ax = fig.add_subplot(rows, cols, k)
-cf = ax.tricontourf(lonCell, latCell, barotropicThicknessFluxZonal, levels=levels, extend='both')
-ax.set_title('Zonal component')
-ax.set_ylabel('RFB')
-fig.colorbar(cf, ax=ax)
-k = k + 1
-
-ax = fig.add_subplot(rows, cols, k)
-cf = ax.tricontourf(lonCell, latCell, barotropicThicknessFluxMeridional, levels=levels, extend='both')
-ax.set_title('Meridonal component')
-fig.colorbar(cf, ax=ax)
-k = k + 1
-
-ax = fig.add_subplot(rows, cols, k)
-mag_rbf = np.sqrt(barotropicThicknessFluxZonal**2 + barotropicThicknessFluxMeridional**2)
-cf = ax.tricontourf(lonCell, latCell, mag_rbf, levels=mlevels, extend='max')
-ax.set_title('Magnitude')
-fig.colorbar(cf, ax=ax)
-k = k + 1
-
-# Plot lat lon components of reconstructed field
-ax = fig.add_subplot(rows, cols, k)
-cf = ax.tricontourf(lonCell, latCell, flon, levels=levels, extend='both')
-fig.colorbar(cf, ax=ax)
-ax.set_ylabel('Mimetic interpolation')
-k = k + 1
-
-ax = fig.add_subplot(rows, cols, k)
-cf = ax.tricontourf(lonCell, latCell, flat, levels=levels, extend='both')
-fig.colorbar(cf, ax=ax)
-k = k + 1
-
-ax = fig.add_subplot(rows, cols, k)
-mag = np.sqrt(flon**2 + flat**2)
-cf = ax.tricontourf(lonCell, latCell, mag, levels=mlevels, extend='max')
-fig.colorbar(cf, ax=ax)
-k = k + 1
-
-# Plot differences 
-ax = fig.add_subplot(rows, cols, k)
-diff = flon-barotropicThicknessFluxZonal
-vrange = np.max(np.abs(diff)) 
-levels = np.linspace(-vrange, vrange, 10)
-cf = ax.tricontourf(lonCell, latCell, diff, cmap='RdBu', levels=levels) 
-fig.colorbar(cf, ax=ax)
-ax.set_ylabel('Mimetic-RBF')
-k = k + 1
-
-ax = fig.add_subplot(rows, cols, k)
-diff = flat-barotropicThicknessFluxMeridional
-vrange = np.max(np.abs(diff)) 
-levels = np.linspace(-vrange, vrange, 10)
-cf = ax.tricontourf(lonCell, latCell, diff, cmap='RdBu', levels=levels)
-fig.colorbar(cf, ax=ax)
-k = k + 1
-
-ax = fig.add_subplot(rows, cols, k)
-mag = np.sqrt(flon**2 + flat**2)
-diff = mag-mag_rbf
-vrange = np.max(np.abs(diff)) 
-levels = np.linspace(-vrange, vrange, 10)
-cf = ax.tricontourf(lonCell, latCell, diff, cmap='RdBu', levels=levels)
-fig.colorbar(cf, ax=ax)
-k = k + 1
-
-plt.savefig('field.png')
-plt.close()
+plot_fields(mesh, field_s, mesh, field_t, 'field.png')
 
