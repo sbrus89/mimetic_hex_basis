@@ -5,7 +5,7 @@ import random
 from shapely.geometry.polygon import Polygon
 from shapely.geometry import Point
 import netCDF4 as nc4
-#from scipy.sparse import coo_array
+from scipy.sparse import coo_array
 
 np.seterr(divide='ignore', invalid='ignore')
  
@@ -13,6 +13,24 @@ np.seterr(divide='ignore', invalid='ignore')
 R= 6371220.0
 
 def area(x, y, x1, y1, x2, y2):
+
+    xr = x.ravel()
+    yr = y.ravel()
+    M = np.ones((xr.size, 3, 3))
+    M[:, 1, 0] = xr
+    M[:, 2, 0] = yr
+
+    M[:, 1, 1] = x1
+    M[:, 2, 1] = y1
+
+    M[:, 1, 2] = x2
+    M[:, 2, 2] = y2
+
+    A = 0.5*np.linalg.det(M)
+    A = A.reshape(x.shape)
+    return A
+
+def area_vec(x, y, x1, y1, x2, y2):
 
     x_shape = x.shape
     xr = x.ravel()
@@ -75,43 +93,37 @@ def vector_basis(n, i, v, phi, norm_factor=1.0):
 
 def wachpress_vec(n, v, xx, yy):
 
+    npts = xx.size
+
     i = np.arange(0, n)
     ip1 = (i+1) % n
 
     C = area_c(v[i-1,0], v[i-1,1], v[i,0], v[i,1], v[ip1,0], v[ip1,1])
-    print(C.shape)
-    A = area(xx, yy, v[i,0], v[i,1], v[ip1,0], v[ip1,1])
-    A = A.reshape((xx.size,n))
-    print(A.shape)
-    A = A[:,:, np.newaxis]
-    print(A.shape)
-
-    print(np.max(np.abs(C)))
-    print(np.max(np.abs(A)))
+    A = area_vec(xx, yy, v[i,0], v[i,1], v[ip1,0], v[ip1,1])
+    A = A.reshape((npts,n))
+    A = np.repeat(A[:,:, np.newaxis], n, axis=2)
 
     mask = np.zeros((n,n), dtype=np.int32)
     j = np.arange(-1,n-1)
     mask[j,j] = 1
     mask[j,j-1] = 1
-    print(mask)
-    #np.ma.masked_array(A,mask)
-    #A = A*mask
-    A = np.squeeze(A[:,mask])
-    print(A.shape)
-    A = np.prod(A,axis=-1)
-    print(np.max(np.abs(A)))
+    mask=mask.T
+    mask = np.repeat(mask[np.newaxis,:,:], npts, axis=0)
+    A = np.ma.masked_array(A,mask=mask)
+    A = np.prod(A,axis=1)
+    A = A.filled()
 
-    w = C[np.newaxis,np.newaxis,:]*A
-    print(w.shape)
-    print(np.max(np.abs(w)))
+    w = C*A
     sum_w = np.sum(w, axis=-1)
-    print(sum_w.shape)
-    print(np.max(np.abs(sum_w)))
 
-    phi = w/sum_w[:,:,np.newaxis]
-    phi = np.transpose(phi, (2, 0, 1))
+    phi = w/sum_w[:,np.newaxis]
 
-    print(phi.shape)
+    out_shape = np.append(xx.shape,(n))
+    phi = np.reshape(phi,(out_shape))
+    #axes = np.arange(-1,phi.ndim-1)
+    #phi = np.transpose(phi, axes)
+    phi = np.transpose(phi, (2,0,1))
+
     return phi
 
 def wachpress(n,v,xx,yy,method='area'):
@@ -355,14 +367,22 @@ if not skip_test:
     ############################################
     # Wachpress functions
     ############################################
-    
+
     # Compute Wachpress coordinates
     phi_vec = wachpress_vec(n, v, xx, yy)
     phi, rx, ry = wachpress(n, v, xx, yy, method='distance')
     phi_area = wachpress(n, v, xx, yy, method='area')
+    x = xx.ravel()[:,np.newaxis]
+    y = yy.ravel()[:,np.newaxis]
+    phi_area2 = wachpress(n, v, x, y, method='area')
+    phi_area2 = np.reshape(phi_area2, phi_area.shape)
+    phi_vec2 = wachpress_vec(n, v, x, y)
+    phi_vec2 = np.reshape(phi_vec2, phi_area.shape)
     phi[:,~mask] = np.nan
     phi_area[:,~mask] = np.nan
+    phi_area2[:,~mask] = np.nan
     phi_vec[:,~mask] = np.nan
+    phi_vec2[:,~mask] = np.nan
     
     # Ensure both distance and area methods are equivalent
     diff = np.nanmax(np.abs(phi-phi_area))
@@ -371,16 +391,19 @@ if not skip_test:
         print(diff)
         raise SystemExit(0)
 
+    diff = np.nanmax(np.abs(phi-phi_area2))
+    if diff > 1e-15:
+        print("Distance and area methods do not agree")
+        print(diff)
+        raise SystemExit(0)
+
     # Ensure both vectorized and standard functions are equivalent
     diff = np.nanmax(np.abs(phi-phi_vec))
-    print(diff)
     if diff > 1e-15:
         print("Distance and vectorized area methods do not agree")
         print(diff)
         raise SystemExit(0)
 
-    raise SystemExit(0)    
-    
     # Compute gradients
     phix = np.zeros((n,xx.shape[0],xx.shape[1]))
     phiy = np.zeros((n,xx.shape[0],xx.shape[1]))
@@ -905,7 +928,7 @@ if not skip_remap:
             lon2 = np.expand_dims(lonVertex_source[vertices_p1], axis=1)
             lat2 = np.expand_dims(latVertex_source[vertices_p1], axis=1)
             ds, u, v =  gnomonic_integration(lon0, lat0, lon1, lat1, lon2, lat2, t)
-            phi = wachpress(n, uv, u, v, method='area')
+            phi = wachpress_vec(n, uv, u, v)
             
             # Evaluate watchpress functions at sub-edge quadrature points from target edge in u,v
             lat1_sub_edge = lat_sub_edge[cell_target, jEdge, sub_edge]
@@ -913,7 +936,7 @@ if not skip_remap:
             lat2_sub_edge = lat_sub_edge[cell_target, jEdge, sub_edge+1]
             lon2_sub_edge = lon_sub_edge[cell_target, jEdge, sub_edge+1]        
             ds_quad, u_quad, v_quad = gnomonic_integration(lon0, lat0, lon1_sub_edge, lat1_sub_edge, lon2_sub_edge, lat2_sub_edge, t)
-            phi_quad = wachpress(n, uv, u_quad.T, v_quad.T, method='area')
+            phi_quad = wachpress_vec(n, uv, u_quad.T, v_quad.T)
             ds_quad = np.squeeze(ds_quad)
 
             if plot_edge: 
@@ -1040,7 +1063,7 @@ for cell in range(nCells):
     uCell, vCell = gnomonic_forward(lonCell[cell], latCell[cell], lon0, lat0)
     uCell = np.expand_dims(np.asarray([uCell]), axis=0) # put single value in an array for call to watchpress
     vCell = np.expand_dims(np.asarray([vCell]), axis=0)
-    phi_cell = wachpress(n, uv, uCell, vCell, method='area')
+    phi_cell = wachpress_vec(n, uv, uCell, vCell)
 
     # Evaluate watchpress functions at quadrature points 
     lon1 = np.expand_dims(lonVertex[vertices], axis=1)
@@ -1048,7 +1071,7 @@ for cell in range(nCells):
     lon2 = np.expand_dims(lonVertex[vertices_p1], axis=1)
     lat2 = np.expand_dims(latVertex[vertices_p1], axis=1)
     ds, u, v =  gnomonic_integration(lon0, lat0, lon1, lat1, lon2, lat2, t)
-    phi = wachpress(n, uv, u, v, method='area')
+    phi = wachpress_vec(n, uv, u, v)
 
     fu = np.zeros(uCell.shape)
     fv = np.zeros(vCell.shape)
