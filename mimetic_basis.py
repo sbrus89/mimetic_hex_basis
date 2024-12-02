@@ -1056,6 +1056,7 @@ class Mesh:
         self.edgeSignOnCell = nc_mesh.variables['edgeSignOnCell'][:]
         self.verticesOnEdge = nc_mesh.variables['verticesOnEdge'][:]
         self.dvEdge = nc_mesh.variables['dvEdge'][:]
+        self.angleEdge = nc_mesh.variables['angleEdge'][:]
 
         self.nEdges = self.lonEdge.size
         self.nCells = self.lonCell.size
@@ -1087,9 +1088,39 @@ class Field:
 
         nc_file.close()
 
+    def set_edge_field(self, function, mesh):
+
+        flon_edge, flat_edge = function(mesh.lonEdge, mesh.latEdge) 
+        flon_cell, flat_cell = function(mesh.lonCell, mesh.latCell) 
+
+        self.zonal = flon_cell
+        self.meridional = flat_cell
+        self.edge = np.cos(mesh.angleEdge)*flon_edge + np.sin(mesh.angleEdge)*flat_edge
+
+    def average_to_edges(self, mesh):
+
+        for i in range(mesh.nEdges):
+            cell1 = mesh.cellsOnEdge[i,0] - 1
+            cell2 = mesh.cellsOnEdge[i,1] - 1
+
+            zonalEdge = 0.5*(self.zonal[cell1] + self.zonal[cell2])
+            meridionalEdge = 0.5*(self.meridional[cell1] + self.meridional[cell2])
+            
+            self.edge[i] = np.cos(mesh.angleEdge[i])*zonalEdge + np.sin(mesh.angleEdge[i])*meridionalEdge
+
+def function(lon, lat):
+
+    flon = 2.0*np.cos(24.0*lon)
+    flat = 2.0*np.cos(24.0*lat) 
+
+    return flon, flat
+
 ############################################
 # Remap MPAS edge field from 16km to 32km 
 ############################################
+use_exact_field = True
+#use_exact_field = False
+
 #skip_remap = True
 skip_remap = False
 if not skip_remap:
@@ -1104,11 +1135,20 @@ if not skip_remap:
     edge_mapping = Mapping(edge_information_filename)
     source_field = Field(source_mesh_filename)
     target_field = Field(target_mesh_filename) 
-    
+   
+    if use_exact_field: 
+        source_field.set_edge_field(function, source)
+        target_field.set_edge_field(function, target)
+        target_exact = Field(target_mesh_filename)
+        target_exact.set_edge_field(function, target)
+
     plot_fields(source, source_field, target, target_field, 'field_target_source_rbf.png')
 
     remap_edges(source, target, edge_mapping, source_field, target_field)
-    
+
+    if use_exact_field:
+        rmse = np.sqrt(np.mean(np.square(target_exact.edge - target_field.edge)))
+        print(rmse) 
 
 ############################################
 # Reconstruct MPAS edge field at cell centers 
@@ -1124,5 +1164,11 @@ if not skip_remap:
 
 reconstruct_edges_to_centers(mesh, field_s, field_t)
 
-plot_fields(mesh, field_s, mesh, field_t, 'field.png')
-
+if use_exact_field:
+    plot_fields(mesh, target_exact, mesh, field_t, 'field.png')
+    rmse = np.sqrt(np.mean(np.square(target_exact.zonal - field_t.zonal)))
+    print(rmse)
+    rmse = np.sqrt(np.mean(np.square(target_exact.meridional - field_t.meridional)))
+    print(rmse)
+else:
+    plot_fields(mesh, field_s, mesh, field_t, 'field.png')
