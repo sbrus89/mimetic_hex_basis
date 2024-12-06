@@ -308,6 +308,66 @@ def transform_vector_components_latlon_uv(lon0, lat0, lon, lat, flon, flat):
 
     return fu, fv
 
+
+def interp_edges(function, target, target_field):
+
+    lon0 = 0.5*(np.max(target.lonVertex) + np.min(target.lonVertex))
+    lat0 = 0.5*(np.max(target.latVertex) + np.min(target.latVertex))
+    
+    # get number of edges
+    print(target.nEdges)
+    
+    t, w = np.polynomial.legendre.leggauss(5)
+    t = np.expand_dims(t, axis=1)
+    
+    t_start = time.time()
+
+    #plot_edge = True
+    plot_edge = False
+
+    target_field.edge = np.zeros((target.nEdges))
+    for edge in range(target.nEdges): 
+    
+        print(edge)
+   
+        # Get normal vector for target edge 
+        vertices = target.verticesOnEdge[edge, 0:2] - 1 
+        vertices = np.roll(vertices, 1) # this is important to account for how mpas defines vertices on an edge
+        uVertex, vVertex = gnomonic_forward(target.lonVertex[vertices], target.latVertex[vertices], lon0, lat0)
+        nu, nv = edge_normal(uVertex[0], vVertex[0], uVertex[1], vVertex[1])
+
+        # Evaluate function at edge quadrature points
+        lon1 = np.expand_dims(target.lonVertex[vertices[0]], axis=0)
+        lat1 = np.expand_dims(target.latVertex[vertices[0]], axis=0)
+        lon2 = np.expand_dims(target.lonVertex[vertices[1]], axis=0)
+        lat2 = np.expand_dims(target.latVertex[vertices[1]], axis=0)
+        ds, u, v =  gnomonic_integration(lon0, lat0, lon1, lat1, lon2, lat2, t)
+        lon, lat = gnomonic_inverse(u, v, lon0, lat0)
+        flon, flat = function(lon, lat)
+        fu, fv = transform_vector_components_latlon_uv(lon0, lat0, lon, lat, flon, flat)
+
+        if plot_edge:
+            fig = plt.figure()
+            ax = fig.add_subplot(111)
+            ax.scatter(uVertex, vVertex, marker='o', color='k', alpha=0.5)
+            ax.plot([uVertex[0], uVertex[1]], [vVertex[0], vVertex[1]],color='k', alpha=0.5)
+            ax.quiver(0.5*(uVertex[0]+uVertex[1]), 0.5*(vVertex[0]+vVertex[1]), nu, nv)
+            ax.scatter(u, v, marker='.', color='r')
+            ax.quiver(u, v, fu, fv, color='b')
+            ax.quiver(u, v, flon, flat, color='m')
+            ax.axis('equal')
+            plt.savefig('test_edge.png',dpi=500)
+            plt.close()
+            raise SystemExit(0)
+
+        # compute integral over edge
+        integral = -np.sum(w*(fu*nu + fv*nv)*ds)
+        #integral = -np.sum(w*(flon*nu + flat*nv)*ds)
+        target_field.edge[edge] = integral/target.dvEdge[edge]
+      
+    print(np.round(time.time() - t_start, 3))
+
+
 def remap_edges(source, target, edge_mapping, source_field, target_field):
 
     color_list = ['tab:blue', 'tab:orange', 'tab:green', 'tab:red', 'tab:purple', 'tab:brown']
@@ -1137,7 +1197,8 @@ if not skip_remap:
     target_field = Field(target_mesh_filename) 
    
     if use_exact_field: 
-        source_field.set_edge_field(function, source)
+        #source_field.set_edge_field(function, source)
+        interp_edges(function, source, source_field)
         target_field.set_edge_field(function, target)
         target_exact = Field(target_mesh_filename)
         target_exact.set_edge_field(function, target)
@@ -1170,5 +1231,9 @@ if use_exact_field:
     print(rmse)
     rmse = np.sqrt(np.mean(np.square(target_exact.meridional - field_t.meridional)))
     print(rmse)
+    max_err = np.max(np.abs(target_exact.zonal - field_t.zonal))
+    print(max_err)
+    max_err = np.max(np.abs(target_exact.meridional - field_t.meridional))
+    print(max_err)
 else:
     plot_fields(mesh, field_s, mesh, field_t, 'field.png')
