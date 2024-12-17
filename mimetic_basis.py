@@ -301,10 +301,14 @@ def transform_vector_components_latlon_uv(lon0, lat0, lon, lat, flon, flat):
     beta  = np.sqrt(dlondu**2 + dlatdu**2)
     gamma = np.sqrt(dlondv**2 + dlatdv**2)
 
-    fu = dlondu/beta*flon + dlatdu/beta*flat
-    fv = dlondv/gamma*flon + dlatdv/gamma*flat    
+    #fu = dlondu/beta*flon + dlatdu/beta*flat
+    #fv = dlondv/gamma*flon + dlatdv/gamma*flat    
     #fu = dlondu*flon + dlatdu*flat
     #fv = dlondv*flon + dlatdv*flat    
+
+    den = (dlondu*dlatdv - dlondv*dlatdu)/(beta*gamma)
+    fu = (dlatdv/gamma*flon - dlondv/gamma*flat)/den
+    fv = (-dlatdu/beta*flon + dlondu/beta*flat)/den 
 
     return fu, fv
 
@@ -649,7 +653,8 @@ def plot_fields(mesh1, field1, mesh2, field2, fig_name):
     if plot_diff:
         ax = fig.add_subplot(rows, cols, k)
         diff = field2.zonal-field1.zonal
-        vrange = np.max(np.abs(diff)) 
+        #vrange = np.max(np.abs(diff)) 
+        vrange = 0.2785
         levels = np.linspace(-vrange, vrange, 10)
         cf = ax.tricontourf(mesh1.lonCell, mesh1.latCell, diff, cmap='RdBu', levels=levels) 
         fig.colorbar(cf, ax=ax)
@@ -658,7 +663,8 @@ def plot_fields(mesh1, field1, mesh2, field2, fig_name):
         
         ax = fig.add_subplot(rows, cols, k)
         diff = field2.meridional-field1.meridional
-        vrange = np.max(np.abs(diff)) 
+        #vrange = np.max(np.abs(diff)) 
+        vrange = 0.3598
         levels = np.linspace(-vrange, vrange, 10)
         cf = ax.tricontourf(mesh1.lonCell, mesh1.latCell, diff, cmap='RdBu', levels=levels)
         fig.colorbar(cf, ax=ax)
@@ -666,7 +672,8 @@ def plot_fields(mesh1, field1, mesh2, field2, fig_name):
         
         ax = fig.add_subplot(rows, cols, k)
         diff = mag2-mag1
-        vrange = np.max(np.abs(diff)) 
+        #vrange = np.max(np.abs(diff)) 
+        vrange = 0.3887
         levels = np.linspace(-vrange, vrange, 10)
         cf = ax.tricontourf(mesh1.lonCell, mesh1.latCell, diff, cmap='RdBu', levels=levels)
         fig.colorbar(cf, ax=ax)
@@ -1199,6 +1206,9 @@ if not skip_remap:
     if use_exact_field: 
         #source_field.set_edge_field(function, source)
         interp_edges(function, source, source_field)
+
+        reconstruct_edges_to_centers(source, source_field, source_field)
+
         target_field.set_edge_field(function, target)
         target_exact = Field(target_mesh_filename)
         target_exact.set_edge_field(function, target)
