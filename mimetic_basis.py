@@ -1159,8 +1159,8 @@ if not skip_test:
     
     ############################################
     # Spherical line integration
-    ############################################
-    
+    ############################################   
+ 
     # New York
     lon1 = -74.006 
     lat1 = 40.7128
@@ -1185,11 +1185,21 @@ if not skip_test:
     
     ds, u, v =  gnomonic_integration(lon0, lat0, lon1, lat1, lon2, lat2, t)
     L = np.sum(ds*w)
+    print("")
+    print("gnomonic integration")
     print(L/1000.0)
     
     hav = np.sin(0.5*(lat2-lat1))**2 + np.cos(lat1)*np.cos(lat2)*np.sin(0.5*(lon2-lon1))**2
     d = 2.0*R*np.arcsin(np.sqrt(hav))
+    print("Haversine distance")
     print(d/1000.0)
+    print("Difference")
+    diff = abs(L-d)
+    print(diff)
+
+    if diff > 1e-8:
+        print("Arc length integration issue")
+        raise SystemExit(0)
 
 class Mesh:
 
@@ -1276,6 +1286,7 @@ def function(lon, lat):
 ############################################
 # Remap MPAS edge field from 16km to 32km 
 ############################################
+print("")
 use_exact_field = True
 #use_exact_field = False
 
