@@ -416,6 +416,9 @@ def interp_edges(function, target, target_field):
     for edge in range(target.nEdges): 
     
         print(edge)
+
+        lon0 = target.lonEdge[edge]
+        lat0 = target.latEdge[edge]
    
         # Get normal vector for target edge 
         vertices = target.verticesOnEdge[edge, 0:2] - 1 
@@ -482,6 +485,9 @@ def remap_edges(source, target, edge_mapping, source_field, target_field):
     for edge in range(target.nEdges): 
     
         print(edge)
+
+        lon0 = target.lonEdge[edge]
+        lat0 = target.latEdge[edge]
    
         # Find local edge number for global edge on cell 0 
         cell_target = target.cellsOnEdge[edge,0] - 1
@@ -612,9 +618,11 @@ def reconstruct_edges_to_centers(mesh, field_source, field_target):
     
     field_target.zonal = np.zeros((mesh.nCells))
     field_target.meridional = np.zeros((mesh.nCells))
-    #nCells = 0
     for cell in range(mesh.nCells):
         print(cell)
+
+        lon0 = mesh.lonCell[cell]
+        lat0 = mesh.latCell[cell]
     
         n = mesh.nEdgesOnCell[cell]
         vertices = mesh.verticesOnCell[cell, 0:n] - 1
