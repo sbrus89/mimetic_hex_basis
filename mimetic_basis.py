@@ -276,39 +276,122 @@ def gnomonic_integration(lon0, lat0, lon1, lat1, lon2, lat2, t):
 
     return ds, u, v
 
-def transform_vector_components_uv_latlon(lon0, lat0, lon, lat, fu, fv):
+def transform_vector_components(lon0, lat0, lon, lat):
+
+    n = lon.size
 
     u, v = gnomonic_forward(lon, lat, lon0, lat0)
 
     dlondu, dlondv, dlatdu, dlatdv = latlon_uv_jacobian(u, v, lon0, lat0)
 
-    beta  = np.sqrt(dlondu**2 + dlatdu**2)
-    gamma = np.sqrt(dlondv**2 + dlatdv**2)
+    dxdr = np.cos(lat)*np.cos(lon)
+    dydr = np.cos(lat)*np.sin(lon)
+    dzdr = np.sin(lat)
 
-    flon = dlondu/beta*fu + dlondv/gamma*fv
-    flat = dlatdu/beta*fu + dlatdv/gamma*fv    
-    #flon = dlondu*fu + dlondv*fv
-    #flat = dlatdu*fu + dlatdv*fv    
+    dxdlon = -R*np.cos(lat)*np.sin(lon)
+    dydlon = R*np.cos(lat)*np.cos(lon)
+    dzdlon = 0.0
+
+    dxdlat =  -R*np.sin(lat)*np.cos(lon)
+    dydlat = -R*np.sin(lat)*np.sin(lon)
+    dzdlat = R*np.cos(lat)
+    
+    alpha = np.sqrt(dxdr**2 + dydr**2 + dzdr**2) 
+    beta = np.sqrt(dxdlon**2 + dydlon**2 + dzdlon**2)
+    gamma = np.sqrt(dxdlat**2 + dydlat**2 + dzdlat**2)
+
+    A = np.zeros((3,3,n))
+    A[0,0,:] = dxdr/alpha; A[0,1,:] = dxdlon/beta; A[0,2,:] = dxdlat/gamma;
+    A[1,0,:] = dydr/alpha; A[1,1,:] = dydlon/beta; A[1,2,:] = dydlat/gamma;
+    A[2,0,:] = dzdr/alpha; A[2,1,:] = dzdlon/beta; A[2,2,:] = dzdlat/gamma;
+
+    dlondu, dlondv, dlatdu, dlatdv = latlon_uv_jacobian(u, v, lon0, lat0)
+
+    dxdu = dxdlon*dlondu + dxdlat*dlatdu
+    dydu = dydlon*dlondu + dydlat*dlatdu
+    dzdu = dzdlon*dlondu + dzdlat*dlatdu
+
+    dxdv = dxdlon*dlondv + dxdlat*dlatdv
+    dydv = dydlon*dlondv + dydlat*dlatdv
+    dzdv = dzdlon*dlondv + dzdlat*dlatdv
+ 
+    beta = np.sqrt(dxdu**2 + dydu**2 + dzdu**2)
+    gamma = np.sqrt(dxdv**2 + dydv**2 + dzdv**2)
+
+    B = np.zeros((3,3,n))
+    B[0,0,:] = dxdr/alpha; B[0,1,:] = dxdu/beta; B[0,2,:] = dxdv/gamma;
+    B[1,0,:] = dydr/alpha; B[1,1,:] = dydu/beta; B[1,2,:] = dydv/gamma;
+    B[2,0,:] = dzdr/alpha; B[2,1,:] = dzdu/beta; B[2,2,:] = dzdv/gamma;
+
+    return A, B
+
+def transform_vector_components_uv_latlon(lon0, lat0, lon, lat, fu, fv):
+
+    #u, v = gnomonic_forward(lon, lat, lon0, lat0)
+
+    #dlondu, dlondv, dlatdu, dlatdv = latlon_uv_jacobian(u, v, lon0, lat0)
+
+    #beta  = np.sqrt(dlondu**2 + dlatdu**2)
+    #gamma = np.sqrt(dlondv**2 + dlatdv**2)
+
+    #flon = dlondu/beta*fu + dlondv/gamma*fv
+    #flat = dlatdu/beta*fu + dlatdv/gamma*fv    
+    ##flon = dlondu*fu + dlondv*fv
+    ##flat = dlatdu*fu + dlatdv*fv    
+
+    n = lon.size
+
+    A, B = transform_vector_components(lon0, lat0, lon, lat)
+    A = np.transpose(A, (2, 0, 1))
+    B = np.transpose(B, (2, 0, 1))
+
+    Ainv = np.linalg.inv(A)
+
+    fuv = np.zeros((n,3))
+    fuv[:,1] = fu
+    fuv[:,2] = fv
+
+    M = np.einsum('nij,njk->nik',Ainv,B)
+    f = np.einsum('nij,nj->ni',M,fuv)
+    flon = f[:,1]
+    flat = f[:,2]
 
     return flon, flat
 
 def transform_vector_components_latlon_uv(lon0, lat0, lon, lat, flon, flat):
 
-    u, v = gnomonic_forward(lon, lat, lon0, lat0)
+    #u, v = gnomonic_forward(lon, lat, lon0, lat0)
 
-    dlondu, dlondv, dlatdu, dlatdv = latlon_uv_jacobian(u, v, lon0, lat0)
+    #dlondu, dlondv, dlatdu, dlatdv = latlon_uv_jacobian(u, v, lon0, lat0)
 
-    beta  = np.sqrt(dlondu**2 + dlatdu**2)
-    gamma = np.sqrt(dlondv**2 + dlatdv**2)
+    #beta  = np.sqrt(dlondu**2 + dlatdu**2)
+    #gamma = np.sqrt(dlondv**2 + dlatdv**2)
 
-    #fu = dlondu/beta*flon + dlatdu/beta*flat
-    #fv = dlondv/gamma*flon + dlatdv/gamma*flat    
-    #fu = dlondu*flon + dlatdu*flat
-    #fv = dlondv*flon + dlatdv*flat    
+    ##fu = dlondu/beta*flon + dlatdu/beta*flat
+    ##fv = dlondv/gamma*flon + dlatdv/gamma*flat    
+    ##fu = dlondu*flon + dlatdu*flat
+    ##fv = dlondv*flon + dlatdv*flat    
 
-    den = (dlondu*dlatdv - dlondv*dlatdu)/(beta*gamma)
-    fu = (dlatdv/gamma*flon - dlondv/gamma*flat)/den
-    fv = (-dlatdu/beta*flon + dlondu/beta*flat)/den 
+    #den = (dlondu*dlatdv - dlondv*dlatdu)/(beta*gamma)
+    #fu = (dlatdv/gamma*flon - dlondv/gamma*flat)/den
+    #fv = (-dlatdu/beta*flon + dlondu/beta*flat)/den 
+
+    n = lon.size
+
+    A, B = transform_vector_components(lon0, lat0, lon, lat)
+    B = np.transpose(B, (2, 0, 1))
+    A = np.transpose(A, (2, 0, 1))
+
+    Binv = np.linalg.inv(B)
+
+    fll = np.zeros((n,3))
+    fll[:,1] = flon
+    fll[:,2] = flat 
+
+    M = np.einsum('nij,njk->nik',Binv,A)
+    f = np.einsum('nij,nj->ni',M,fll)
+    fu = f[:,1]
+    fv = f[:,2]
 
     return fu, fv
 
