@@ -611,6 +611,8 @@ def reconstruct_edges_to_centers(mesh, field_source, field_target):
 
     t_start = time.time()
     
+    color_list = ['tab:blue', 'tab:orange', 'tab:green', 'tab:red', 'tab:purple', 'tab:brown']
+
     # get number of cells and edges
     print(mesh.nCells)
     print(mesh.nEdges)
@@ -623,6 +625,9 @@ def reconstruct_edges_to_centers(mesh, field_source, field_target):
     t, w = np.polynomial.legendre.leggauss(5)
     t = np.expand_dims(t, axis=1)
     
+    plot_cell = True
+    #plot_cell = False
+
     field_target.zonal = np.zeros((mesh.nCells))
     field_target.meridional = np.zeros((mesh.nCells))
     for cell in range(mesh.nCells):
@@ -656,17 +661,28 @@ def reconstruct_edges_to_centers(mesh, field_source, field_target):
         lat2 = np.expand_dims(mesh.latVertex[vertices_p1], axis=1)
         ds, u, v =  gnomonic_integration(lon0, lat0, lon1, lat1, lon2, lat2, t)
         phi = wachpress_vec(n, uv, u, v)
+
+        if plot_cell:
+            fig = plt.figure()
+            ax = fig.add_subplot(111)
+            ax.scatter(uCell, vCell, marker='o', color='k', alpha=0.5)
     
         fu = np.zeros(uCell.shape)
         fv = np.zeros(vCell.shape)
         for i in range(n):
-            ip1 = (i+1) % n
             edge = mesh.edgesOnCell[cell,i] - 1
     
             # evaluate basis functions at quadrature points
             Phiu, Phiv = vector_basis(n, i, uv, np.expand_dims(phi[:,i,:], axis=-1), norm_factor=1.0)
             Phiu = np.squeeze(Phiu)
             Phiv = np.squeeze(Phiv)
+
+            if plot_cell:
+                ip1 = (i+1) % n
+                ax.scatter(uVertex[i],vVertex[i],marker='o', color=color_list[i])
+                ax.plot([uVertex[i], uVertex[ip1]], [vVertex[i], vVertex[ip1]], color=color_list[i], alpha=0.5)
+                ax.scatter(u[i,:], v[i,:], marker='x', color=color_list[i])
+                ax.quiver(0.5*(uv[i,0]+uv[ip1,0]), 0.5*(uv[i,1]+uv[ip1,1]), nu[i], nv[i], color=color_list[i])
     
             # compute integral over edge for basis function normalization factor      
             integral = np.sum(w*(Phiu*nu[i] + Phiv*nv[i])*ds[i,:])
@@ -681,7 +697,14 @@ def reconstruct_edges_to_centers(mesh, field_source, field_target):
             fv = fv + coef*Phiv
     
         # compute lon lat vector components
-        field_target.zonal[cell], field_target.meridional[cell] = transform_vector_components_uv_latlon(lon0, lat0, mesh.lonCell[cell], mesh.latCell[cell], fu, fv)
+        field_target.zonal[cell], field_target.meridional[cell] = transform_vector_components_uv_latlon(lon0, lat0, mesh.lonCell[cell], mesh.latCell[cell], fu[0,0], fv[0,0])
+
+        if plot_cell:
+            ax.axis('equal')
+            plt.savefig('test_cell_reconstruct.png',dpi=500)
+            plt.close()
+            raise SystemExit(0)
+            
     
     print(np.round(time.time() - t_start, 3))
 
