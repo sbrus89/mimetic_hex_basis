@@ -413,6 +413,7 @@ def interp_edges(function, target, target_field):
     plot_edge = False
 
     target_field.edge = np.zeros((target.nEdges))
+    edge_len_diff = np.zeros((target.nEdges))
     for edge in range(target.nEdges): 
     
         print(edge)
@@ -422,7 +423,6 @@ def interp_edges(function, target, target_field):
    
         # Get normal vector for target edge 
         vertices = target.verticesOnEdge[edge, 0:2] - 1 
-        vertices = np.roll(vertices, 1) # this is important to account for how mpas defines vertices on an edge
         uVertex, vVertex = gnomonic_forward(target.lonVertex[vertices], target.latVertex[vertices], lon0, lat0)
         nu, nv = edge_normal(uVertex[0], vVertex[0], uVertex[1], vVertex[1])
 
@@ -451,11 +451,18 @@ def interp_edges(function, target, target_field):
             raise SystemExit(0)
 
         # compute integral over edge
-        integral = -np.sum(w*(fu*nu + fv*nv)*ds)
-        #integral = -np.sum(w*(flon*nu + flat*nv)*ds)
-        target_field.edge[edge] = integral/target.dvEdge[edge]
+        L = np.sum(w*ds)
+        integral = np.sum(w*(fu*nu + fv*nv)*ds)
+        #target_field.edge[edge] = integral/target.dvEdge[edge]
+        target_field.edge[edge] = integral/L
+
+        edge_len_diff[edge] = np.abs(np.sum(w*ds) - target.dvEdge[edge])
+        
       
     print(np.round(time.time() - t_start, 3))
+
+    print(np.max(edge_len_diff))
+    print(np.argmax(edge_len_diff))
 
 
 def remap_edges(source, target, edge_mapping, source_field, target_field):
@@ -629,7 +636,6 @@ def reconstruct_edges_to_centers(mesh, field_source, field_target):
         vertices = np.roll(vertices, 1) # this is important to account for how mpas defines vertices on an edge
         vertices_p1 = np.roll(vertices, -1)
     
-    
         # Cell vertex coordinates and edge normals in u, v
         uVertex, vVertex = gnomonic_forward(mesh.lonVertex[vertices], mesh.latVertex[vertices], lon0, lat0)
         uv = np.vstack((uVertex, vVertex)).T # package for call to watchpress, vector_basis etc
@@ -663,13 +669,14 @@ def reconstruct_edges_to_centers(mesh, field_source, field_target):
             Phiv = np.squeeze(Phiv)
     
             # compute integral over edge for basis function normalization factor      
-            integral = np.sum(w*(Phiu*nu[i] + Phiv*nv[i])*ds[i,:], axis=0)
+            integral = np.sum(w*(Phiu*nu[i] + Phiv*nv[i])*ds[i,:])
     
             # compute normalized basis functions at cell centers 
-            Phiu, Phiv = vector_basis(n, i, uv, phi_cell , norm_factor=integral)
+            Phiu, Phiv = vector_basis(n, i, uv, phi_cell, norm_factor=integral)
     
             # compute reconstruction at cell center
-            coef = -mesh.edgeSignOnCell[cell, i]*mesh.dvEdge[edge]*field_source.edge[edge]
+            L = np.sum(w*ds[i,:])
+            coef = -mesh.edgeSignOnCell[cell, i]*L*field_source.edge[edge]
             fu = fu + coef*Phiu
             fv = fv + coef*Phiv
     
