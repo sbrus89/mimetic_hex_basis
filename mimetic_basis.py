@@ -12,6 +12,8 @@ np.seterr(divide='ignore', invalid='ignore')
 #R = 6356.0*1000.0
 R= 6371220.0
 
+color_list = ['tab:blue', 'tab:orange', 'tab:green', 'tab:red', 'tab:purple', 'tab:brown', 'tab:pink']
+
 def area(x, y, x1, y1, x2, y2):
 
     xr = x.ravel()
@@ -467,8 +469,6 @@ def interp_edges(function, target, target_field):
 
 def remap_edges(source, target, edge_mapping, source_field, target_field):
 
-    color_list = ['tab:blue', 'tab:orange', 'tab:green', 'tab:red', 'tab:purple', 'tab:brown']
-
     lon0 = 0.5*(np.max(source.lonVertex) + np.min(source.lonVertex))
     lat0 = 0.5*(np.max(source.latVertex) + np.min(source.latVertex))
     
@@ -611,8 +611,6 @@ def reconstruct_edges_to_centers(mesh, field_source, field_target):
 
     t_start = time.time()
     
-    color_list = ['tab:blue', 'tab:orange', 'tab:green', 'tab:red', 'tab:purple', 'tab:brown']
-
     # get number of cells and edges
     print(mesh.nCells)
     print(mesh.nEdges)
@@ -625,9 +623,6 @@ def reconstruct_edges_to_centers(mesh, field_source, field_target):
     t, w = np.polynomial.legendre.leggauss(5)
     t = np.expand_dims(t, axis=1)
     
-    plot_cell = True
-    #plot_cell = False
-
     field_target.zonal = np.zeros((mesh.nCells))
     field_target.meridional = np.zeros((mesh.nCells))
     for cell in range(mesh.nCells):
@@ -640,6 +635,14 @@ def reconstruct_edges_to_centers(mesh, field_source, field_target):
         vertices = mesh.verticesOnCell[cell, 0:n] - 1
         vertices = np.roll(vertices, 1) # this is important to account for how mpas defines vertices on an edge
         vertices_p1 = np.roll(vertices, -1)
+
+        #plot_cell = True
+        plot_cell = False
+        #if n == 5:
+        #if cell == 14795:
+        #   plot_cell = True
+        #else:
+        #   plot_cell = False
     
         # Cell vertex coordinates and edge normals in u, v
         uVertex, vVertex = gnomonic_forward(mesh.lonVertex[vertices], mesh.latVertex[vertices], lon0, lat0)
@@ -663,9 +666,7 @@ def reconstruct_edges_to_centers(mesh, field_source, field_target):
         phi = wachpress_vec(n, uv, u, v)
 
         if plot_cell:
-            fig = plt.figure()
-            ax = fig.add_subplot(111)
-            ax.scatter(uCell, vCell, marker='o', color='k', alpha=0.5)
+            fig = plt.figure(figsize=(16,8))
     
         fu = np.zeros(uCell.shape)
         fv = np.zeros(vCell.shape)
@@ -677,18 +678,44 @@ def reconstruct_edges_to_centers(mesh, field_source, field_target):
             Phiu = np.squeeze(Phiu)
             Phiv = np.squeeze(Phiv)
 
-            if plot_cell:
-                ip1 = (i+1) % n
-                ax.scatter(uVertex[i],vVertex[i],marker='o', color=color_list[i])
-                ax.plot([uVertex[i], uVertex[ip1]], [vVertex[i], vVertex[ip1]], color=color_list[i], alpha=0.5)
-                ax.scatter(u[i,:], v[i,:], marker='x', color=color_list[i])
-                ax.quiver(0.5*(uv[i,0]+uv[ip1,0]), 0.5*(uv[i,1]+uv[ip1,1]), nu[i], nv[i], color=color_list[i])
     
             # compute integral over edge for basis function normalization factor      
             integral = np.sum(w*(Phiu*nu[i] + Phiv*nv[i])*ds[i,:])
     
             # compute normalized basis functions at cell centers 
             Phiu, Phiv = vector_basis(n, i, uv, phi_cell, norm_factor=integral)
+
+            if plot_cell:
+                ax = fig.add_subplot(3,3,i+1)
+                ax.scatter(uCell, vCell, marker='o', color='k', alpha=0.5)
+
+                Nx = 100
+                Ny = 100
+                N = 5
+                x = np.linspace(np.min(uVertex), np.max(uVertex), Nx)
+                y = np.linspace(np.min(vVertex), np.max(vVertex), Ny)
+                xx, yy = np.meshgrid(x, y)
+                mask = np.array(xx.ravel(),dtype='bool')
+                xy = np.vstack((xx.ravel(), yy.ravel())).T
+                polygon = Polygon(uv)
+                for pt in range(Nx*Ny):
+                    p = Point(xy[pt])
+                    mask[pt] = polygon.contains(p)
+                mask = mask.reshape(xx.shape)
+                phi_vec_grid = wachpress_vec(n, uv, xx, yy)
+                phi_vec_grid[:,~mask] = np.nan
+                Phix, Phiy = vector_basis(n, i, uv, phi_vec_grid, norm_factor=integral)
+                cr = np.linspace(0,1.0,10)
+                c = ax.contourf(xx, yy, np.sqrt(np.square(Phix)+np.square(Phiy))) 
+                cbar = fig.colorbar(c)
+                ax.quiver(xx[::N,::N],yy[::N,::N],Phix[::N,::N],Phiy[::N,::N])
+                for j in range(n):
+                    jp1 = (j+1) % n
+                    ax.scatter(uVertex[j],vVertex[j],marker='o', color=color_list[j])
+                    ax.plot([uVertex[j], uVertex[jp1]], [vVertex[j], vVertex[jp1]], color=color_list[j], alpha=0.5)
+                    ax.scatter(u[j,:], v[j,:], marker='x', color=color_list[j])
+                    ax.quiver(0.5*(uv[j,0]+uv[jp1,0]), 0.5*(uv[j,1]+uv[jp1,1]), nu[j], nv[j], color=color_list[j])
+                ax.axis('equal')
     
             # compute reconstruction at cell center
             L = np.sum(w*ds[i,:])
@@ -700,7 +727,6 @@ def reconstruct_edges_to_centers(mesh, field_source, field_target):
         field_target.zonal[cell], field_target.meridional[cell] = transform_vector_components_uv_latlon(lon0, lat0, mesh.lonCell[cell], mesh.latCell[cell], fu[0,0], fv[0,0])
 
         if plot_cell:
-            ax.axis('equal')
             plt.savefig('test_cell_reconstruct.png',dpi=500)
             plt.close()
             raise SystemExit(0)
