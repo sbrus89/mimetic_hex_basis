@@ -347,16 +347,16 @@ def transform_vector_components_uv_latlon(lon0, lat0, lon, lat, fu, fv):
     A = np.transpose(A, (2, 0, 1))
     B = np.transpose(B, (2, 0, 1))
 
-    Ainv = np.linalg.inv(A)
-
     fuv = np.zeros((n,3))
     fuv[:,1] = fu
     fuv[:,2] = fv
 
-    M = np.einsum('nij,njk->nik',Ainv,B)
-    f = np.einsum('nij,nj->ni',M,fuv)
-    flon = f[:,1]
-    flat = f[:,2]
+    b = np.einsum('nij,nj->ni',B,fuv)
+    b = np.expand_dims(b,axis=-1)
+    f = np.linalg.solve(A,b)
+
+    flon = f[:,1,0]
+    flat = f[:,2,0]
 
     return flon, flat
 
@@ -384,16 +384,16 @@ def transform_vector_components_latlon_uv(lon0, lat0, lon, lat, flon, flat):
     B = np.transpose(B, (2, 0, 1))
     A = np.transpose(A, (2, 0, 1))
 
-    Binv = np.linalg.inv(B)
-
     fll = np.zeros((n,3))
     fll[:,1] = flon
     fll[:,2] = flat 
 
-    M = np.einsum('nij,njk->nik',Binv,A)
-    f = np.einsum('nij,nj->ni',M,fll)
-    fu = f[:,1]
-    fv = f[:,2]
+    b = np.einsum('nij,nj->ni',A,fll)
+    b = np.expand_dims(b,axis=-1)
+    f = np.linalg.solve(B,b)
+    
+    fu = f[:,1,0]
+    fv = f[:,2,0]
 
     return fu, fv
 
