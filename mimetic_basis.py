@@ -1369,6 +1369,8 @@ if not skip_remap:
     if use_exact_field: 
         #source_field.set_edge_field(function, source)
         interp_edges(function, source, source_field)
+        source_exact = Field(source_mesh_filename)
+        source_exact.set_edge_field(function, source)
 
         reconstruct_edges_to_centers(source, source_field, source_field)
 
@@ -1376,7 +1378,7 @@ if not skip_remap:
         target_exact = Field(target_mesh_filename)
         target_exact.set_edge_field(function, target)
 
-    plot_fields(source, source_field, target, target_field, 'field_target_source_rbf.png')
+    plot_fields(source, source_field, source, source_exact, 'field_target_source_rbf.png')
 
     remap_edges(source, target, edge_mapping, source_field, target_field)
 
