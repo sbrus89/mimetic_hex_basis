@@ -232,12 +232,14 @@ def latlon_uv_jacobian(u, v, lon0, lat0):
     den = u**2 + (R*np.cos(lat0) - v*np.sin(lat0))**2
     dlondu = (R*np.cos(lat0) - v*np.sin(lat0))/den 
     dlondv = u*np.sin(lat0)/den
+    dlondR = -u*np.cos(lat0)/den
 
     den = R**3*k**(3.0/2.0)*np.sqrt(1.0 - (v*np.cos(lat0) + R*np.sin(lat0))**2/(R**2*k)) 
     dlatdu = -u*(v*np.cos(lat0) + R*np.sin(lat0))/den
     dlatdv = ((R**2 + u**2)*np.cos(lat0) - R*v*np.sin(lat0))/den
+    dlatdR = ((u**2 + v**2)*np.sin(lat0) - R*v*np.cos(lat0))/den
 
-    return dlondu, dlondv, dlatdu, dlatdv
+    return dlondu, dlondv, dlondR, dlatdu, dlatdv, dlatdR
 
 def gnomonic_integration(lon0, lat0, lon1, lat1, lon2, lat2, t):
 
@@ -265,7 +267,7 @@ def gnomonic_integration(lon0, lat0, lon1, lat1, lon2, lat2, t):
     dzdlat = R*np.cos(lat)
     #dzdlon = 0.0
 
-    dlondu, dlondv, dlatdu, dlatdv = latlon_uv_jacobian(u, v, lon0, lat0)
+    dlondu, dlondv, dlondR, dlatdu, dlatdv, dlatdR = latlon_uv_jacobian(u, v, lon0, lat0)
 
     dlatdt = dlatdu*dudt + dlatdv*dvdt 
     dlondt = dlondu*dudt + dlondv*dvdt
@@ -282,10 +284,6 @@ def transform_vector_components(lon0, lat0, lon, lat):
 
     n = lon.size
 
-    u, v = gnomonic_forward(lon, lat, lon0, lat0)
-
-    dlondu, dlondv, dlatdu, dlatdv = latlon_uv_jacobian(u, v, lon0, lat0)
-
     dxdr = np.cos(lat)*np.cos(lon)
     dydr = np.cos(lat)*np.sin(lon)
     dzdr = np.sin(lat)
@@ -299,7 +297,7 @@ def transform_vector_components(lon0, lat0, lon, lat):
     dzdlat = R*np.cos(lat)
     
     alpha = np.sqrt(dxdr**2 + dydr**2 + dzdr**2) 
-    beta = np.sqrt(dxdlon**2 + dydlon**2 + dzdlon**2)
+    beta  = np.sqrt(dxdlon**2 + dydlon**2 + dzdlon**2)
     gamma = np.sqrt(dxdlat**2 + dydlat**2 + dzdlat**2)
 
     A = np.zeros((3,3,n))
@@ -307,7 +305,13 @@ def transform_vector_components(lon0, lat0, lon, lat):
     A[1,0,:] = dydr/alpha; A[1,1,:] = dydlon/beta; A[1,2,:] = dydlat/gamma;
     A[2,0,:] = dzdr/alpha; A[2,1,:] = dzdlon/beta; A[2,2,:] = dzdlat/gamma;
 
-    dlondu, dlondv, dlatdu, dlatdv = latlon_uv_jacobian(u, v, lon0, lat0)
+    u, v = gnomonic_forward(lon, lat, lon0, lat0)
+    dlondu, dlondv, dlondR, dlatdu, dlatdv, dlatdR = latlon_uv_jacobian(u, v, lon0, lat0)
+    drdR = 1.0
+
+    dxdR = dxdlon*dlondR + dxdlat*dlatdR + dxdr*drdR
+    dydR = dydlon*dlondR + dydlat*dlatdR + dydr*drdR
+    dzdR = dzdlon*dlondR + dzdlat*dlatdR + dzdr*drdR
 
     dxdu = dxdlon*dlondu + dxdlat*dlatdu
     dydu = dydlon*dlondu + dydlat*dlatdu
@@ -316,14 +320,15 @@ def transform_vector_components(lon0, lat0, lon, lat):
     dxdv = dxdlon*dlondv + dxdlat*dlatdv
     dydv = dydlon*dlondv + dydlat*dlatdv
     dzdv = dzdlon*dlondv + dzdlat*dlatdv
- 
-    beta = np.sqrt(dxdu**2 + dydu**2 + dzdu**2)
+
+    alpha = np.sqrt(dxdR**2 + dydR**2 + dzdR**2) 
+    beta  = np.sqrt(dxdu**2 + dydu**2 + dzdu**2)
     gamma = np.sqrt(dxdv**2 + dydv**2 + dzdv**2)
 
     B = np.zeros((3,3,n))
-    B[0,0,:] = dxdr/alpha; B[0,1,:] = dxdu/beta; B[0,2,:] = dxdv/gamma;
-    B[1,0,:] = dydr/alpha; B[1,1,:] = dydu/beta; B[1,2,:] = dydv/gamma;
-    B[2,0,:] = dzdr/alpha; B[2,1,:] = dzdu/beta; B[2,2,:] = dzdv/gamma;
+    B[0,0,:] = dxdR/alpha; B[0,1,:] = dxdu/beta; B[0,2,:] = dxdv/gamma;
+    B[1,0,:] = dydR/alpha; B[1,1,:] = dydu/beta; B[1,2,:] = dydv/gamma;
+    B[2,0,:] = dzdR/alpha; B[2,1,:] = dzdu/beta; B[2,2,:] = dzdv/gamma;
 
     return A, B
 
