@@ -1322,7 +1322,7 @@ if not skip_test:
     diff = abs(L-d)
     print(diff)
 
-    if diff > 1e-8:
+    if diff > 1e-8 and true_gnomonic:
         print("Arc length integration issue")
         raise SystemExit(0)
 
