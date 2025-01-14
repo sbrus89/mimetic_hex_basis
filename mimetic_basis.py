@@ -516,10 +516,9 @@ def interp_edges(function, target, target_field):
         # compute integral over edge
         L = np.sum(w_gp*ds)
         integral = np.sum(w_gp*(fu*nu + fv*nv)*ds)
-        #target_field.edge[edge] = integral/target.dvEdge[edge]
         target_field.edge[edge] = integral/L
 
-        edge_len_diff[edge] = np.abs(np.sum(w_gp*ds) - target.dvEdge[edge])
+        edge_len_diff[edge] = np.abs(L - target.dvEdge[edge])
         
       
     print(np.round(time.time() - t_start, 3))
@@ -568,6 +567,14 @@ def remap_edges(source, target, edge_mapping, source_field, target_field):
         vertices = np.roll(vertices, 1) # this is important to account for how mpas defines vertices on an edge
         uVertex, vVertex, wVertex = gnomonic_forward(target.lonVertex[vertices], target.latVertex[vertices], lon0, lat0)
         nu_target, nv_target = edge_normal(uVertex[iEdge], vVertex[iEdge], uVertex[iEdgep1], vVertex[iEdgep1])
+
+        # Target edge length
+        lon1 = target.lonVertex[target.verticesOnEdge[edge,0]-1]
+        lat1 = target.latVertex[target.verticesOnEdge[edge,0]-1]
+        lon2 = target.lonVertex[target.verticesOnEdge[edge,1]-1]
+        lat2 = target.latVertex[target.verticesOnEdge[edge,1]-1]
+        ds_quad, u_quad, v_quad, w_quad  = gnomonic_integration(lon0, lat0, lon1, lat1, lon2, lat2, t)
+        L_target = np.sum(w_gp*ds_quad.T)
 
         jEdge = iEdge-1 # this is important fot getting edge right in cells_assoc, lon/lat_sub_edge
         n_sub_edges = edge_mapping.nb_sub_edges[cell_target, jEdge] 
@@ -645,9 +652,9 @@ def remap_edges(source, target, edge_mapping, source_field, target_field):
                 Phiv = np.squeeze(Phiv)
         
                 # compute reconstruction 
-                L_source = np.sum(w_gp*ds_quad)
+                L_source = np.sum(w_gp*ds[i,:])
                 integral = np.sum(w_gp*(Phiu*nu_target + Phiv*nv_target)*ds_quad)
-                coef = -source.edgeSignOnCell[sub_edge_cell, i]*source.dvEdge[edge_source]*integral/target.dvEdge[edge]
+                coef = -source.edgeSignOnCell[sub_edge_cell, i]*L_source*integral/L_target
                 target_field.edge[edge] = target_field.edge[edge] + coef*source_field.edge[edge_source]
 
                 row[m] = edge
