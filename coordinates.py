@@ -1,5 +1,8 @@
 import numpy as np
 
+#R = 6356.0*1000.0
+R= 6371220.0
+
 def edge_normal(xi, yi, xip1, yip1):
 
     nx = yip1 - yi
@@ -32,9 +35,9 @@ def latlon_xyz(lon, lat):
 
     return x, y, z
 
-def gnomonic_forward(lon, lat, lon0, lat0):
+def transform_coordinates_forward(lon, lat, lon0, lat0, gnomonic):
 
-    if true_gnomonic:
+    if gnomonic:
         cos_alpha = np.sin(lat0)*np.sin(lat) + np.cos(lat0)*np.cos(lat)*np.cos(lon-lon0)
 
         u = R*np.cos(lat)*np.sin(lon-lon0)/cos_alpha
@@ -52,10 +55,9 @@ def gnomonic_forward(lon, lat, lon0, lat0):
 
     return u, v, w
 
-def gnomonic_inverse(u, v, w, lon0, lat0):
+def transform_coordinates_inverse(u, v, w, lon0, lat0, gnomonic):
 
-    # True gnomonic
-    if true_gnomonic:
+    if gnomonic:
         rho = np.sqrt(u**2 + v**2)
         alpha = np.arctan2(rho,R)
 
@@ -107,10 +109,10 @@ def xyz_uv_jaconian(lon0, lat0):
 
     return dxdu, dxdv, dydu, dydv, dzdu, dzdv
 
-def gnomonic_integration(lon0, lat0, lon1, lat1, lon2, lat2, t):
+def parameterize_integration(lon0, lat0, lon1, lat1, lon2, lat2, t, gnomonic):
 
-    u1, v1, w1 = gnomonic_forward(lon1, lat1, lon0, lat0)
-    u2, v2, w2 = gnomonic_forward(lon2, lat2, lon0, lat0)
+    u1, v1, w1 = transform_coordinates_forward(lon1, lat1, lon0, lat0, gnomonic)
+    u2, v2, w2 = transform_coordinates_forward(lon2, lat2, lon0, lat0, gnomonic)
 
     if isinstance(u1,np.ndarray):
         u = 0.5*(np.matmul(u2, (1.0+t).T) + np.matmul(u1, (1.0-t).T))
@@ -125,8 +127,8 @@ def gnomonic_integration(lon0, lat0, lon1, lat1, lon2, lat2, t):
     dudt = 0.5*(u2 - u1)
     dvdt = 0.5*(v2 - v1)
 
-    if true_gnomonic:
-        lon, lat = gnomonic_inverse(u, v, w, lon0, lat0)
+    if gnomonic:
+        lon, lat = transform_coordinates_inverse(u, v, w, lon0, lat0, gnomonic)
         dxdlat = -R*np.sin(lat)*np.cos(lon)
         dxdlon = -R*np.cos(lat)*np.sin(lon)
 
@@ -157,7 +159,7 @@ def gnomonic_integration(lon0, lat0, lon1, lat1, lon2, lat2, t):
 
     return ds, u, v, w
 
-def transform_vector_components(lon0, lat0, lon, lat):
+def transform_vector_components(lon0, lat0, lon, lat, gnomonic):
 
     n = lon.size
 
@@ -182,8 +184,8 @@ def transform_vector_components(lon0, lat0, lon, lat):
     A[1,0,:] = dydr/alpha; A[1,1,:] = dydlon/beta; A[1,2,:] = dydlat/gamma;
     A[2,0,:] = dzdr/alpha; A[2,1,:] = dzdlon/beta; A[2,2,:] = dzdlat/gamma;
 
-    if true_gnomonic:
-        u, v, w = gnomonic_forward(lon, lat, lon0, lat0)
+    if gnomonic:
+        u, v, w = transform_coordinates_forward(lon, lat, lon0, lat0)
         dlondu, dlondv, dlondw, dlatdu, dlatdv, dlatdw = latlon_uv_jacobian(u, v, lon0, lat0)
         drdw = 1.0
 
@@ -217,11 +219,11 @@ def transform_vector_components(lon0, lat0, lon, lat):
 
     return A, B
 
-def transform_vector_components_uv_latlon(lon0, lat0, lon, lat, fu, fv):
+def transform_vector_components_uv_latlon(lon0, lat0, lon, lat, fu, fv, gnomonic):
 
     n = lon.size
 
-    A, B = transform_vector_components(lon0, lat0, lon, lat)
+    A, B = transform_vector_components(lon0, lat0, lon, lat, gnomonic)
     A = np.transpose(A, (2, 0, 1))
     B = np.transpose(B, (2, 0, 1))
 
@@ -239,11 +241,11 @@ def transform_vector_components_uv_latlon(lon0, lat0, lon, lat, fu, fv):
 
     return flon, flat
 
-def transform_vector_components_latlon_uv(lon0, lat0, lon, lat, flon, flat):
+def transform_vector_components_latlon_uv(lon0, lat0, lon, lat, flon, flat, gnomonic):
 
     n = lon.size
 
-    A, B = transform_vector_components(lon0, lat0, lon, lat)
+    A, B = transform_vector_components(lon0, lat0, lon, lat, gnomonic)
     B = np.transpose(B, (2, 0, 1))
     A = np.transpose(A, (2, 0, 1))
 
@@ -255,7 +257,6 @@ def transform_vector_components_latlon_uv(lon0, lat0, lon, lat, flon, flat):
     b = np.expand_dims(b,axis=-1)
     f = np.linalg.solve(B,b)
 
-    # Local tangent plane projection
     fu = f[:,0,0]
     fv = f[:,1,0]
 
