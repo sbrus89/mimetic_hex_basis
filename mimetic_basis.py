@@ -10,6 +10,7 @@ from basis import wachpress, wachpress_vec, vector_basis
 from coordinates import edge_normal, parameterize_line, transform_coordinates_forward, transform_coordinates_inverse, parameterize_integration, transform_vector_components_latlon_uv, transform_vector_components_uv_latlon, R
 from remap import interp_edges, remap_edges, reconstruct_edges_to_centers
 from mesh_map_classes import Mesh, Mapping, Field, function
+from plotting import plot_fields
 
 np.seterr(divide='ignore', invalid='ignore')
  
@@ -20,100 +21,6 @@ gnomonic = False
 #gnomonic = True
 
 
-
-def plot_fields(mesh1, field1, mesh2, field2, fig_name):
-
-    same_mesh = False
-    if mesh1.nCells == mesh2.nCells:
-        same_mesh = True
-
-    if same_mesh:
-        rows = 3
-        plot_diff = True
-    else:
-        rows = 2
-        plot_diff = False
-
-    # Set up figure
-    cols = 3
-    fig = plt.figure(figsize=(18, 4.5*rows))
-    k = 1
-    vmin = -2.5
-    vmax = 3.5
-    levels = np.linspace(vmin, vmax, 10)
-    mlevels = np.linspace(0, vmax, 10)
-    
-    # Plot original RBF field
-    ax = fig.add_subplot(rows, cols, k)
-    cf = ax.tricontourf(mesh1.lonCell, mesh1.latCell, field1.zonal, levels=levels, extend='both')
-    ax.set_title('Zonal component')
-    ax.set_ylabel('RFB')
-    fig.colorbar(cf, ax=ax)
-    k = k + 1
-    
-    ax = fig.add_subplot(rows, cols, k)
-    cf = ax.tricontourf(mesh1.lonCell, mesh1.latCell, field1.meridional, levels=levels, extend='both')
-    ax.set_title('Meridonal component')
-    fig.colorbar(cf, ax=ax)
-    k = k + 1
-    
-    ax = fig.add_subplot(rows, cols, k)
-    mag1 = np.sqrt(field1.zonal**2 + field1.meridional**2)
-    cf = ax.tricontourf(mesh1.lonCell, mesh1.latCell, mag1, levels=mlevels, extend='max')
-    ax.set_title('Magnitude')
-    fig.colorbar(cf, ax=ax)
-    k = k + 1
-    
-    # Plot lat lon components of reconstructed field
-    ax = fig.add_subplot(rows, cols, k)
-    cf = ax.tricontourf(mesh2.lonCell, mesh2.latCell, field2.zonal, levels=levels, extend='both')
-    fig.colorbar(cf, ax=ax)
-    ax.set_ylabel('Mimetic interpolation')
-    k = k + 1
-    
-    ax = fig.add_subplot(rows, cols, k)
-    cf = ax.tricontourf(mesh2.lonCell, mesh2.latCell, field2.meridional, levels=levels, extend='both')
-    fig.colorbar(cf, ax=ax)
-    k = k + 1
-    
-    ax = fig.add_subplot(rows, cols, k)
-    mag2 = np.sqrt(field2.zonal**2 + field2.meridional**2)
-    cf = ax.tricontourf(mesh2.lonCell, mesh2.latCell, mag2, levels=mlevels, extend='max')
-    fig.colorbar(cf, ax=ax)
-    k = k + 1
-    
-    # Plot differences 
-    if plot_diff:
-        ax = fig.add_subplot(rows, cols, k)
-        diff = field2.zonal-field1.zonal
-        #vrange = np.max(np.abs(diff)) 
-        vrange = 0.2785
-        levels = np.linspace(-vrange, vrange, 10)
-        cf = ax.tricontourf(mesh1.lonCell, mesh1.latCell, diff, cmap='RdBu', levels=levels) 
-        fig.colorbar(cf, ax=ax)
-        ax.set_ylabel('Mimetic-RBF')
-        k = k + 1
-        
-        ax = fig.add_subplot(rows, cols, k)
-        diff = field2.meridional-field1.meridional
-        #vrange = np.max(np.abs(diff)) 
-        vrange = 0.3598
-        levels = np.linspace(-vrange, vrange, 10)
-        cf = ax.tricontourf(mesh1.lonCell, mesh1.latCell, diff, cmap='RdBu', levels=levels)
-        fig.colorbar(cf, ax=ax)
-        k = k + 1
-        
-        ax = fig.add_subplot(rows, cols, k)
-        diff = mag2-mag1
-        #vrange = np.max(np.abs(diff)) 
-        vrange = 0.3887
-        levels = np.linspace(-vrange, vrange, 10)
-        cf = ax.tricontourf(mesh1.lonCell, mesh1.latCell, diff, cmap='RdBu', levels=levels)
-        fig.colorbar(cf, ax=ax)
-        k = k + 1
-    
-    plt.savefig(fig_name)
-    plt.close()
 
 #skip_test = True
 skip_test = False
@@ -548,8 +455,8 @@ if not skip_test:
 # Remap MPAS edge field from 16km to 32km 
 ############################################
 print("")
-use_exact_field = True
-#use_exact_field = False
+#use_exact_field = True
+use_exact_field = False
 
 #skip_remap = True
 skip_remap = False

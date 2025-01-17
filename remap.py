@@ -6,6 +6,8 @@ import time
 from basis import wachpress_vec, vector_basis
 from coordinates import edge_normal, transform_coordinates_forward, transform_coordinates_inverse, parameterize_integration, transform_vector_components_latlon_uv, transform_vector_components_uv_latlon
 
+from plotting import plot_cell_reconstruct, plot_interp_edge, plot_remap
+
 color_list = ['tab:blue', 'tab:orange', 'tab:green', 'tab:red', 'tab:purple', 'tab:brown', 'tab:pink']
 
 
@@ -22,8 +24,8 @@ def interp_edges(function, target, target_field, gnomonic=True):
     
     t_start = time.time()
 
-    #plot_edge = True
-    plot_edge = False
+    plot_edge = True
+    #plot_edge = False
 
     target_field.edge = np.zeros((target.nEdges))
     edge_len_diff = np.zeros((target.nEdges))
@@ -50,17 +52,7 @@ def interp_edges(function, target, target_field, gnomonic=True):
         fu, fv = transform_vector_components_latlon_uv(lon0, lat0, lon, lat, flon, flat, gnomonic)
 
         if plot_edge:
-            fig = plt.figure()
-            ax = fig.add_subplot(111)
-            ax.scatter(uVertex, vVertex, marker='o', color='k', alpha=0.5)
-            ax.plot([uVertex[0], uVertex[1]], [vVertex[0], vVertex[1]],color='k', alpha=0.5)
-            ax.quiver(0.5*(uVertex[0]+uVertex[1]), 0.5*(vVertex[0]+vVertex[1]), nu, nv)
-            ax.scatter(u, v, marker='.', color='r')
-            ax.quiver(u, v, fu, fv, color='b')
-            ax.quiver(u, v, flon, flat, color='m')
-            ax.axis('equal')
-            plt.savefig('test_edge.png',dpi=500)
-            plt.close()
+            plot_interp_edge(uVertex, vVertex, u, v, nu, nv, fu, fv, flon, flat)
 
         # compute integral over edge
         L = np.sum(w_gp*ds)
@@ -106,14 +98,14 @@ def remap_edges(source, target, edge_mapping, source_field, target_field, gnomon
         # Find local edge number for global edge on cell 0 
         cell_target = target.cellsOnEdge[edge,0] - 1
         iEdge = np.where(target.edgesOnCell[cell_target,:] == edge + 1)[0][0]
-        n = target.nEdgesOnCell[cell_target]
-        iEdgep1 = (iEdge+1) % n
+        n_target = target.nEdgesOnCell[cell_target]
+        iEdgep1 = (iEdge+1) % n_target
 
         # Get normal vector for target edge 
-        vertices = target.verticesOnCell[cell_target, 0:n] - 1
+        vertices = target.verticesOnCell[cell_target, 0:n_target] - 1
         vertices = np.roll(vertices, 1) # this is important to account for how mpas defines vertices on an edge
-        uVertex, vVertex, wVertex = transform_coordinates_forward(target.lonVertex[vertices], target.latVertex[vertices], lon0, lat0, gnomonic)
-        nu_target, nv_target = edge_normal(uVertex[iEdge], vVertex[iEdge], uVertex[iEdgep1], vVertex[iEdgep1])
+        uVertex_target, vVertex_target, wVertex_target = transform_coordinates_forward(target.lonVertex[vertices], target.latVertex[vertices], lon0, lat0, gnomonic)
+        nu_target, nv_target = edge_normal(uVertex_target[iEdge], vVertex_target[iEdge], uVertex_target[iEdgep1], vVertex_target[iEdgep1])
 
         # Target edge length
         lon1 = target.lonVertex[target.verticesOnEdge[edge,0]-1]
@@ -126,20 +118,15 @@ def remap_edges(source, target, edge_mapping, source_field, target_field, gnomon
         jEdge = iEdge-1 # this is important fot getting edge right in cells_assoc, lon/lat_sub_edge
         n_sub_edges = edge_mapping.nb_sub_edges[cell_target, jEdge]
 
-        plot_edge = False
-        #if n_sub_edges < 5:
-        #    plot_edge = False
-        #else:
-        #    plot_edge = True
+        #plot_edge = False
+        if n_sub_edges < 5:
+            plot_edge = False
+        else:
+            plot_edge = True
 
         if plot_edge:
             fig = plt.figure()
             ax = fig.add_subplot(111)
-            ax.scatter(uVertex, vVertex, marker='o', color='k', alpha=0.5)
-            for i in range(n):
-                ip1 = (i+1) % n
-                ax.plot([uVertex[i], uVertex[ip1]], [vVertex[i], vVertex[ip1]],color='k', alpha=0.5)
-            ax.quiver(0.5*(uVertex[iEdge]+uVertex[iEdgep1]), 0.5*(vVertex[iEdge]+vVertex[iEdgep1]), nu_target, nv_target)
 
         for sub_edge in range(n_sub_edges):
             print(f'   {sub_edge}')
@@ -176,11 +163,7 @@ def remap_edges(source, target, edge_mapping, source_field, target_field, gnomon
             ds_quad = np.squeeze(ds_quad)
 
             if plot_edge:
-                ax.plot([uVertex[i], uVertex[ip1]], [vVertex[i], vVertex[ip1]],color=color_list[sub_edge], alpha=0.5)
-                ax.scatter(uVertex, vVertex, marker='o', color=color_list[sub_edge], alpha=0.5)
-                ax.scatter(u_quad, v_quad, marker='x', color=color_list[sub_edge])
-                ax.scatter(u, v, marker='.', color=color_list[sub_edge])
-                ax.quiver(0.5*(uv[i,0]+uv[ip1,0]), 0.5*(uv[i,1]+uv[ip1,1]), nu[i], nv[i], color=color_list[sub_edge])
+                plot_remap(sub_edge, ax, n_target, iEdge, uVertex_target, vVertex_target, nu_target, nv_target, n, uVertex, vVertex, uv, u, v, u_quad, v_quad, nu, nv)
 
             for i in range(n):
                 edge_source = source.edgesOnCell[sub_edge_cell,i] - 1
@@ -208,12 +191,6 @@ def remap_edges(source, target, edge_mapping, source_field, target_field, gnomon
                 col[m] = edge_source
                 data[m] = coef
                 m = m + 1
-
-        if plot_edge:
-            ax.axis('equal')
-            plt.savefig('test_cell.png',dpi=500)
-            plt.close()
-            raise SystemExit(0)
 
     M = coo_array((data, (row, col)), shape=(target.nEdges, source.nEdges)).toarray()
     btf_target_mv = M.dot(source_field.edge)
@@ -251,8 +228,8 @@ def reconstruct_edges_to_centers(mesh, field_source, field_target, gnomonic):
         vertices = np.roll(vertices, 1) # this is important to account for how mpas defines vertices on an edge
         vertices_p1 = np.roll(vertices, -1)
 
-        #plot_cell = True
-        plot_cell = False
+        plot_cell = True
+        #plot_cell = False
         ##if n == 5:
         #if cell == 14795:
         #   plot_cell = True
@@ -293,7 +270,6 @@ def reconstruct_edges_to_centers(mesh, field_source, field_target, gnomonic):
             Phiu = np.squeeze(Phiu)
             Phiv = np.squeeze(Phiv)
 
-
             # compute integral over edge for basis function normalization factor      
             integral = np.sum(w_gp*(Phiu*nu[i] + Phiv*nv[i])*ds[i,:])
 
@@ -301,36 +277,7 @@ def reconstruct_edges_to_centers(mesh, field_source, field_target, gnomonic):
             Phiu, Phiv = vector_basis(n, i, uv, phi_cell, norm_factor=integral)
 
             if plot_cell:
-                ax = fig.add_subplot(3,3,i+1)
-                ax.scatter(uCell, vCell, marker='o', color='k', alpha=0.5)
-
-                Nx = 100
-                Ny = 100
-                N = 5
-                x = np.linspace(np.min(uVertex), np.max(uVertex), Nx)
-                y = np.linspace(np.min(vVertex), np.max(vVertex), Ny)
-                xx, yy = np.meshgrid(x, y)
-                mask = np.array(xx.ravel(),dtype='bool')
-                xy = np.vstack((xx.ravel(), yy.ravel())).T
-                polygon = Polygon(uv)
-                for pt in range(Nx*Ny):
-                    p = Point(xy[pt])
-                    mask[pt] = polygon.contains(p)
-                mask = mask.reshape(xx.shape)
-                phi_vec_grid = wachpress_vec(n, uv, xx, yy)
-                phi_vec_grid[:,~mask] = np.nan
-                Phix, Phiy = vector_basis(n, i, uv, phi_vec_grid, norm_factor=integral)
-                cr = np.linspace(0,1.0,10)
-                c = ax.contourf(xx, yy, np.sqrt(np.square(Phix)+np.square(Phiy)))
-                cbar = fig.colorbar(c)
-                ax.quiver(xx[::N,::N],yy[::N,::N],Phix[::N,::N],Phiy[::N,::N])
-                for j in range(n):
-                    jp1 = (j+1) % n
-                    ax.scatter(uVertex[j],vVertex[j],marker='o', color=color_list[j])
-                    ax.plot([uVertex[j], uVertex[jp1]], [vVertex[j], vVertex[jp1]], color=color_list[j], alpha=0.5)
-                    ax.scatter(u[j,:], v[j,:], marker='x', color=color_list[j])
-                    ax.quiver(0.5*(uv[j,0]+uv[jp1,0]), 0.5*(uv[j,1]+uv[jp1,1]), nu[j], nv[j], color=color_list[j])
-                ax.axis('equal')
+                plot_cell_reconstruct(fig, n, i, uCell, vCell, uVertex, vVertex, uv, u, v, nu, nv, integral)
 
             # compute reconstruction at cell center
             L = np.sum(w_gp*ds[i,:])
@@ -341,11 +288,4 @@ def reconstruct_edges_to_centers(mesh, field_source, field_target, gnomonic):
         # compute lon lat vector components
         field_target.zonal[cell], field_target.meridional[cell] = transform_vector_components_uv_latlon(lon0, lat0, mesh.lonCell[cell], mesh.latCell[cell], fu[0,0], fv[0,0], gnomonic)
 
-        if plot_cell:
-            plt.savefig('test_cell_reconstruct.png',dpi=500)
-            plt.close()
-            raise SystemExit(0)
-
-
     print(np.round(time.time() - t_start, 3))
-
