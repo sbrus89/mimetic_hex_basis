@@ -24,8 +24,8 @@ def interp_edges(function, target, target_field, gnomonic=True):
     
     t_start = time.time()
 
-    plot_edge = True
-    #plot_edge = False
+    #plot_edge = True
+    plot_edge = False
 
     target_field.edge = np.zeros((target.nEdges))
     edge_len_diff = np.zeros((target.nEdges))
@@ -118,11 +118,11 @@ def remap_edges(source, target, edge_mapping, source_field, target_field, gnomon
         jEdge = iEdge-1 # this is important fot getting edge right in cells_assoc, lon/lat_sub_edge
         n_sub_edges = edge_mapping.nb_sub_edges[cell_target, jEdge]
 
-        #plot_edge = False
-        if n_sub_edges < 5:
-            plot_edge = False
-        else:
-            plot_edge = True
+        plot_edge = False
+        #if n_sub_edges < 5:
+        #    plot_edge = False
+        #else:
+        #    plot_edge = True
 
         if plot_edge:
             fig = plt.figure()
@@ -228,8 +228,8 @@ def reconstruct_edges_to_centers(mesh, field_source, field_target, gnomonic):
         vertices = np.roll(vertices, 1) # this is important to account for how mpas defines vertices on an edge
         vertices_p1 = np.roll(vertices, -1)
 
-        plot_cell = True
-        #plot_cell = False
+        #plot_cell = True
+        plot_cell = False
         ##if n == 5:
         #if cell == 14795:
         #   plot_cell = True
