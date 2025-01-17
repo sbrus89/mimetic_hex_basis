@@ -2,6 +2,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 from scipy.sparse import coo_array
 import time
+import xarray as xr
+import netCDF4 as nc4
 
 from basis import wachpress_vec, vector_basis
 from coordinates import edge_normal, transform_coordinates_forward, transform_coordinates_inverse, parameterize_integration, transform_vector_components_latlon_uv, transform_vector_components_uv_latlon
@@ -194,6 +196,21 @@ def remap_edges(source, target, edge_mapping, source_field, target_field, gnomon
 
     M = coo_array((data, (row, col)), shape=(target.nEdges, source.nEdges)).toarray()
     btf_target_mv = M.dot(source_field.edge)
+
+    ds = nc4.Dataset("weight_file.nc", "w")
+    n_s = ds.createDimension("n_s", m)
+    n_a = ds.createDimension("n_a", source.nEdges)
+    n_b = ds.createDimension("n_b", target.nEdges)
+
+    row_nc = ds.createVariable("row", int, ("n_s",))
+    col_nc = ds.createVariable("col", int, ("n_s",))
+    S_nc = ds.createVariable("S", np.float64, ("n_s",))
+
+    row_nc[:] = row[0:m] + 1
+    col_nc[:] = col[0:m] + 1
+    S_nc[:] = data[0:m]
+
+    ds.close()
 
     print(np.max(np.abs(target_field.edge - btf_target_mv)))
 
