@@ -21,7 +21,6 @@ class Mesh:
         self.edgesOnCell = nc_mesh.variables['edgesOnCell'][:]
         self.verticesOnCell = nc_mesh.variables['verticesOnCell'][:]
         self.nEdgesOnCell = nc_mesh.variables['nEdgesOnCell'][:]
-        self.edgeSignOnCell = nc_mesh.variables['edgeSignOnCell'][:]
         self.verticesOnEdge = nc_mesh.variables['verticesOnEdge'][:]
         self.dvEdge = nc_mesh.variables['dvEdge'][:]
         self.angleEdge = nc_mesh.variables['angleEdge'][:]
@@ -29,7 +28,24 @@ class Mesh:
         self.nEdges = self.lonEdge.size
         self.nCells = self.lonCell.size
 
+        try:
+           self.edgeSignOnCell = nc_mesh.variables['edgeSignOnCell'][:]
+        except:
+           self.edgeSignOnCell = self.compute_edgeSignOnCell()
+
         nc_mesh.close()
+
+    def compute_edgeSignOnCell(self):
+
+        edgeSignOnCell = np.zeros_like(self.edgesOnCell)
+        for iCell in range(self.nCells):
+            for i in range(self.nEdgesOnCell[iCell]):
+                iEdge = self.edgesOnCell[iCell, i] - 1
+                if iCell + 1 == self.cellsOnEdge[iEdge, 0]:
+                    edgeSignOnCell[iCell, i] = -1.0
+                else:
+                    edgeSignOnCell[iCell, i] = 1.0
+        return edgeSignOnCell
 
 class Mapping:
 
