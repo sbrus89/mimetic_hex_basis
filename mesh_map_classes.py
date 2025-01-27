@@ -66,9 +66,20 @@ class Field:
 
         nc_file = nc4.Dataset(field_filename, 'r+')
 
-        self.edge = np.squeeze(nc_file.variables['barotropicThicknessFlux'][:])
-        self.zonal = np.squeeze(nc_file.variables['barotropicThicknessFluxZonal'][:])
-        self.meridional = np.squeeze(nc_file.variables['barotropicThicknessFluxMeridional'][:])
+        try: 
+            self.edge = np.squeeze(nc_file.variables['barotropicThicknessFlux'][:])
+        except:
+            pass
+
+        try:
+            self.zonal = np.squeeze(nc_file.variables['barotropicThicknessFluxZonal'][:])
+        except:
+            pass
+
+        try:
+            self.meridional = np.squeeze(nc_file.variables['barotropicThicknessFluxMeridional'][:])
+        except:
+            pass
 
         nc_file.close()
 
