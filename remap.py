@@ -132,6 +132,10 @@ def remap_edges(source, target, edge_mapping, source_field, target_field, gnomon
 
         jEdge = iEdge-1 # this is important fot getting edge right in cells_assoc, lon/lat_sub_edge
         n_sub_edges = edge_mapping.nb_sub_edges[cell_target, jEdge]
+        if jEdge == -1 and n_sub_edges == -9999:
+            jEdge = jEdge - 1
+            n_sub_edges = edge_mapping.nb_sub_edges[cell_target, jEdge]
+    
 
         plot_edge = False
         #if n_sub_edges < 5:
