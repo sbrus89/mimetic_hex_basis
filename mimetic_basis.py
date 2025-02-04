@@ -470,9 +470,9 @@ if not skip_remap:
     source = Mesh(source_mesh_filename)
     target = Mesh(target_mesh_filename)
     edge_mapping = Mapping(edge_information_filename)
-    source_field = Field(source_mesh_filename)
-    target_field = Field(target_mesh_filename) 
-    source_exact = Field(source_mesh_filename)
+    source_field = Field(source_mesh_filename, source)
+    target_field = Field(target_mesh_filename, target) 
+    source_exact = Field(source_mesh_filename, source)
    
     if use_exact_field: 
         #source_field.set_edge_field(function, source)
@@ -482,7 +482,7 @@ if not skip_remap:
         reconstruct_edges_to_centers(source, source_field, source_field, gnomonic)
 
         target_field.set_edge_field(function, target)
-        target_exact = Field(target_mesh_filename)
+        target_exact = Field(target_mesh_filename, target)
         target_exact.set_edge_field(function, target)
 
     plot_fields(source, source_field, source, source_exact, 'field_target_source_rbf.png')
@@ -496,10 +496,11 @@ if not skip_remap:
 ############################################
 # Reconstruct MPAS edge field at cell centers 
 ############################################
-mesh_filename = 'soma_32km_mpas_mesh_with_rbf_weights.nc'
+#mesh_filename = 'soma_32km_mpas_mesh_with_rbf_weights.nc'
+mesh_filename = target_mesh_filename
 mesh = Mesh(mesh_filename)
-field_s = Field(mesh_filename)
-field_t = Field(mesh_filename)
+field_s = Field(mesh_filename, mesh)
+field_t = Field(mesh_filename, mesh)
 
 # read in fields
 if not skip_remap:

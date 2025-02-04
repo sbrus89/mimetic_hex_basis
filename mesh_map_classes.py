@@ -5,7 +5,9 @@ class Mesh:
 
     def __init__(self, mesh_filename):
 
-        nc_mesh = nc4.Dataset(mesh_filename, 'r+')
+        nc_mesh = nc4.Dataset(mesh_filename, 'r')
+
+        self.mesh_filename = mesh_filename
 
         self.lonVertex = nc_mesh.variables['lonVertex'][:]
         self.latVertex = nc_mesh.variables['latVertex'][:]
@@ -51,7 +53,7 @@ class Mapping:
 
     def __init__(self, edge_information_filename):
 
-        edge_info = nc4.Dataset(edge_information_filename, 'r+')
+        edge_info = nc4.Dataset(edge_information_filename, 'r')
 
         self.nb_sub_edges = edge_info.variables['nb_sub_edge'][:]
         self.cells_assoc = edge_info.variables['cells_assoc'][:]
@@ -62,24 +64,30 @@ class Mapping:
 
 class Field:
 
-    def __init__(self, field_filename):
+    def __init__(self, field_filename, mesh):
 
-        nc_file = nc4.Dataset(field_filename, 'r+')
+        nc_file = nc4.Dataset(field_filename, 'r')
 
         try: 
             self.edge = np.squeeze(nc_file.variables['barotropicThicknessFlux'][:])
+            print(f"edge field read {self.edge.shape}")
         except:
-            pass
+            print(f"edge field not read from {field_filename}") 
+            self.edge = np.zeros((mesh.nEdges))
 
         try:
             self.zonal = np.squeeze(nc_file.variables['barotropicThicknessFluxZonal'][:])
+            print(f"zonal field read {self.zonal.shape}")
         except:
-            pass
+            print(f"zonal field not read from {field_filename}") 
+            self.zonal = np.zeros((mesh.nCells))
 
         try:
             self.meridional = np.squeeze(nc_file.variables['barotropicThicknessFluxMeridional'][:])
+            print(f"meridional field read {self.meridional.shape}")
         except:
-            pass
+            print(f"meridional field not read from {field_filename}") 
+            self.meridional = np.zeros((mesh.nCells))
 
         nc_file.close()
 
