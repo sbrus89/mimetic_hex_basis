@@ -130,12 +130,8 @@ def remap_edges(source, target, edge_mapping, source_field, target_field, gnomon
         ds_quad, u_quad, v_quad, w_quad  = parameterize_integration(lon0, lat0, lon1, lat1, lon2, lat2, t, gnomonic)
         L_target = np.sum(w_gp*ds_quad.T)
 
-        jEdge = iEdge-1 # this is important fot getting edge right in cells_assoc, lon/lat_sub_edge
+        jEdge = (iEdge-1) % n_target # this is important fot getting edge right in cells_assoc, lon/lat_sub_edge
         n_sub_edges = edge_mapping.nb_sub_edges[cell_target, jEdge]
-        if jEdge == -1 and n_sub_edges == -9999:
-            jEdge = jEdge - 1
-            n_sub_edges = edge_mapping.nb_sub_edges[cell_target, jEdge]
-    
 
         plot_edge = False
         #if n_sub_edges < 5:
