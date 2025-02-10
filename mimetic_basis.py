@@ -5,6 +5,7 @@ import random
 from shapely.geometry.polygon import Polygon
 from shapely.geometry import Point
 from scipy.sparse import coo_array
+import netCDF4 as nc4
 
 from basis import wachpress, wachpress_vec, vector_basis
 from coordinates import edge_normal, parameterize_line, transform_coordinates_forward, transform_coordinates_inverse, parameterize_integration, transform_vector_components_latlon_uv, transform_vector_components_uv_latlon, R
@@ -493,6 +494,20 @@ if not skip_remap:
         rmse = np.sqrt(np.mean(np.square(target_exact.edge - target_field.edge)))
         print(rmse) 
 
+    # Write fields to file
+    ds = nc4.Dataset(target.mesh_filename, "r+")
+    nc_vars = ds.variables.keys()
+    if 'barotropicThicknessFluxDiff' not in nc_vars:
+        if "Time" not in ds.dimensions:
+            ds.createDimension("Time", None)
+        var = ds.createVariable("barotropicThicknessFluxDiff", np.float64, ("Time","nEdges"))
+        var[0,:] = target_field.edge[:] - target_exact.edge[:]
+    else:
+        var = ds.variables["barotropicThicknessFluxDiff"][:]
+        var[0,:] = target_field.edge[:] - target_exact.edge[:]
+    ds.close()
+
+
 ############################################
 # Reconstruct MPAS edge field at cell centers 
 ############################################
@@ -507,6 +522,37 @@ if not skip_remap:
     field_s.edge = target_field.edge
 
 reconstruct_edges_to_centers(mesh, field_s, field_t, gnomonic)
+
+target_exact.set_cell_field(function, target)
+
+# Write fields to file
+ds = nc4.Dataset(mesh.mesh_filename, "r+")
+nc_vars = ds.variables.keys()
+if 'barotropicThicknessFluxZonalDiff' not in nc_vars:
+    if "Time" not in ds.dimensions:
+        ds.createDimension("Time", None)
+    zonal = ds.createVariable("barotropicThicknessFluxZonalDiff", np.float64, ("Time","nCells"))
+    meridional = ds.createVariable("barotropicThicknessFluxMeridionalDiff", np.float64, ("Time","nCells"))
+    zonal[0,:] = field_t.zonal[:] - target_exact.zonal[:]
+    meridional[0,:] = field_t.meridional[:] - target_exact.meridional[:]
+else:
+    zonal = ds.variables["barotropicThicknessFluxZonalDiff"][:]
+    meridional = ds.variables["barotropicThicknessFluxMeridionalDiff"][:]
+    zonal[0,:] = field_t.zonal[:] - target_exact.zonal[:]
+    meridional[0,:] = field_t.meridional[:] - target_exact.meridional[:]
+
+if 'barotropicThicknessFluxZonal' not in nc_vars:
+    zonal = ds.createVariable("barotropicThicknessFluxZonal", np.float64, ("Time","nCells"))
+    meridional = ds.createVariable("barotropicThicknessFluxMeridional", np.float64, ("Time","nCells"))
+    zonal[0,:] = target_exact.zonal[:]
+    meridional[0,:] = target_exact.meridional[:]
+else:
+    zonal = ds.variables["barotropicThicknessFluxZonal"][:]
+    meridional = ds.variables["barotropicThicknessFluxMeridional"][:]
+    zonal[0,:] = target_exact.zonal[:]
+    meridional[0,:] = target_exact.meridional[:]
+ds.close()
+
 
 if use_exact_field:
     plot_fields(mesh, target_exact, mesh, field_t, 'field.png')

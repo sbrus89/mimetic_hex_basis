@@ -75,9 +75,9 @@ def interp_edges(function, target, target_field, gnomonic=True):
             ds.createDimension("Time", None)
         var = ds.createVariable("barotropicThicknessFlux", np.float64, ("Time","nEdges"))
         var[0,:] = target_field.edge[:]
-    #else:
-    #var = ds.variables["barotropicThicknessFlux"][:]
-    #var[:] = target_field.edge[:]
+    else:
+       var = ds.variables["barotropicThicknessFlux"][:]
+       var[0,:] = target_field.edge[:]
     ds.close()
 
 def remap_edges(source, target, edge_mapping, source_field, target_field, gnomonic=True):
@@ -234,6 +234,18 @@ def remap_edges(source, target, edge_mapping, source_field, target_field, gnomon
 
     ds.close()
 
+    ds = nc4.Dataset(target.mesh_filename, "r+")
+    nc_vars = ds.variables.keys()
+    if 'barotropicThicknessFluxRemapped' not in nc_vars:
+        if "Time" not in ds.dimensions:
+            ds.createDimension("Time", None)
+        var = ds.createVariable("barotropicThicknessFluxRemapped", np.float64, ("Time","nEdges"))
+        var[0,:] = target_field.edge[:]
+    else:
+       var = ds.variables["barotropicThicknessFluxRemapped"][:]
+       var[0,:] = target_field.edge[:]
+    ds.close()
+
 
 
 def reconstruct_edges_to_centers(mesh, field_source, field_target, gnomonic):
@@ -329,15 +341,16 @@ def reconstruct_edges_to_centers(mesh, field_source, field_target, gnomonic):
 
     ds = nc4.Dataset(mesh.mesh_filename, "r+")
     nc_vars = ds.variables.keys()
-    if 'barotropicThicknessFluxZonal' not in nc_vars:
+    if 'barotropicThicknessFluxZonalRemapped' not in nc_vars:
         if "Time" not in ds.dimensions:
             ds.createDimension("Time", None)
-        zonal = ds.createVariable("barotropicThicknessFluxZonal", np.float64, ("Time","nCells"))
-        meridional = ds.createVariable("barotropicThicknessFluxMeridional", np.float64, ("Time","nCells"))
+        zonal = ds.createVariable("barotropicThicknessFluxZonalRemapped", np.float64, ("Time","nCells"))
+        meridional = ds.createVariable("barotropicThicknessFluxMeridionalRemapped", np.float64, ("Time","nCells"))
         zonal[0,:] = field_target.zonal[:]
         meridional[0,:] = field_target.meridional[:]
-    #zonal = ds.variables["barotropicThicknessFluxZonal"][:]
-    #meridional = ds.variables["barotropicThicknessFluxMeridional"][:]
-    #zonal[:] = field_target.zonal[:]
-    #meridional[:] = field_target.meridional[:]
+    else:
+       zonal = ds.variables["barotropicThicknessFluxZonalRemapped"][:]
+       zonal[0,:] = field_target.zonal[:]
+       meridional = ds.variables["barotropicThicknessFluxMeridionalRemapped"][:]
+       meridional[0,:] = field_target.meridional[:]
     ds.close()
