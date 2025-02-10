@@ -18,6 +18,7 @@ class Mesh:
 
         self.lonVertex[self.lonVertex > np.pi] = self.lonVertex[self.lonVertex > np.pi] - 2.0*np.pi
         self.lonCell[self.lonCell > np.pi] = self.lonCell[self.lonCell > np.pi] - 2.0*np.pi
+        self.lonEdge[self.lonEdge > np.pi] = self.lonEdge[self.lonEdge > np.pi] - 2.0*np.pi
 
         self.cellsOnEdge = nc_mesh.variables['cellsOnEdge'][:]
         self.edgesOnCell = nc_mesh.variables['edgesOnCell'][:]
