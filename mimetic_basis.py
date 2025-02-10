@@ -11,7 +11,7 @@ from basis import wachpress, wachpress_vec, vector_basis
 from coordinates import edge_normal, parameterize_line, transform_coordinates_forward, transform_coordinates_inverse, parameterize_integration, transform_vector_components_latlon_uv, transform_vector_components_uv_latlon, R
 from remap import interp_edges, remap_edges, reconstruct_edges_to_centers
 from mesh_map_classes import Mesh, Mapping, Field, function
-from plotting import plot_fields
+from plotting import plot_cell_vector_fields, plot_edge_fields
 
 np.seterr(divide='ignore', invalid='ignore')
  
@@ -474,6 +474,9 @@ if not skip_remap:
     source_field = Field(source_mesh_filename, source)
     target_field = Field(target_mesh_filename, target) 
     source_exact = Field(source_mesh_filename, source)
+
+    source_res = [s for s in source_mesh_filename.split('_') if "km" in s][0]
+    target_res = [s for s in target_mesh_filename.split('_') if "km" in s][0]
    
     if use_exact_field: 
         #source_field.set_edge_field(function, source)
@@ -486,9 +489,12 @@ if not skip_remap:
         target_exact = Field(target_mesh_filename, target)
         target_exact.set_edge_field(function, target)
 
-    plot_fields(source, source_field, source, source_exact, 'field_target_source_rbf.png')
+    plot_cell_vector_fields(source, source_field, 'interpolated', source, source_exact, 'exact', f'source_cell_field_{source_res}.png')
+    plot_edge_fields(source, source_field, 'interpolated', source, source_exact, 'exact', f'source_edge_field_{source_res}.png')
 
     remap_edges(source, target, edge_mapping, source_field, target_field, gnomonic)
+
+    plot_edge_fields(target, target_field, 'remapped', target, target_exact, 'exact', f'remapped_edge_field_{source_res}_to_{target_res}.png')
 
     if use_exact_field:
         rmse = np.sqrt(np.mean(np.square(target_exact.edge - target_field.edge)))
@@ -555,7 +561,7 @@ ds.close()
 
 
 if use_exact_field:
-    plot_fields(mesh, target_exact, mesh, field_t, 'field.png')
+    plot_cell_vector_fields(mesh, target_exact, 'exact', mesh, field_t, 'reconstruction', f'remapped_cell_field_{source_res}_to_{target_res}.png')
     rmse = np.sqrt(np.mean(np.square(target_exact.zonal - field_t.zonal)))
     print(rmse)
     rmse = np.sqrt(np.mean(np.square(target_exact.meridional - field_t.meridional)))
@@ -565,4 +571,4 @@ if use_exact_field:
     max_err = np.max(np.abs(target_exact.meridional - field_t.meridional))
     print(max_err)
 else:
-    plot_fields(mesh, field_s, mesh, field_t, 'field.png')
+    plot_cell_vector_fields(mesh, field_s, 'mimetic', mesh, field_t, 'RBF', 'field.png')

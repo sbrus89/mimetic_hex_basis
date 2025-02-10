@@ -6,7 +6,62 @@ from basis import wachpress_vec, vector_basis
 
 color_list = ['tab:blue', 'tab:orange', 'tab:green', 'tab:red', 'tab:purple', 'tab:brown', 'tab:pink']
 
-def plot_fields(mesh1, field1, mesh2, field2, fig_name):
+def plot_edge_fields(mesh1, field1, label1, mesh2, field2, label2, fig_name):
+
+    same_mesh = False
+    if mesh1.nEdges == mesh2.nEdges:
+        same_mesh = True
+
+    if same_mesh:
+        cols = 3 
+        plot_diff = True
+    else:
+        cols = 2 
+        plot_diff = False
+
+    # Set up figure
+    rows = 1
+    fig = plt.figure(figsize=(18, 4.5*rows))
+    k = 1 
+    #vmin = -2.5
+    #vmax = 3.5 
+    #levels = np.linspace(vmin, vmax, 10) 
+    #mlevels = np.linspace(0, vmax, 10) 
+    levels = 10
+    mlevels = 10
+    
+    # Plot original RBF field
+    ax = fig.add_subplot(rows, cols, k)
+    cf = ax.tricontourf(mesh1.lonEdge, mesh1.latEdge, field1.edge, levels=levels, extend='both')
+    ax.set_title(label1)
+    fig.colorbar(cf, ax=ax)
+    k = k + 1 
+    
+    # Plot lat lon components of reconstructed field
+    ax = fig.add_subplot(rows, cols, k)
+    cf = ax.tricontourf(mesh2.lonEdge, mesh2.latEdge, field2.edge, levels=levels, extend='both')
+    fig.colorbar(cf, ax=ax)
+    ax.set_title(label2)
+    k = k + 1 
+    
+    # Plot differences 
+    if plot_diff:
+        ax = fig.add_subplot(rows, cols, k)
+        diff = field2.edge - field1.edge
+        vrange = np.max(np.abs(diff)) 
+        if vrange < 1e-8:
+            vrange = 1e-8
+        #vrange = 0.3887
+        levels = np.linspace(-vrange, vrange, 10)
+        #levels = 10
+        cf = ax.tricontourf(mesh1.lonEdge, mesh1.latEdge, diff, cmap='RdBu', levels=levels)
+        fig.colorbar(cf, ax=ax)
+        ax.set_title(f'{label2}-{label1}')
+
+    plt.savefig(fig_name)
+    plt.close()
+
+def plot_cell_vector_fields(mesh1, field1, label1, mesh2, field2, label2, fig_name):
 
     same_mesh = False
     if mesh1.nCells == mesh2.nCells:
@@ -23,16 +78,19 @@ def plot_fields(mesh1, field1, mesh2, field2, fig_name):
     cols = 3 
     fig = plt.figure(figsize=(18, 4.5*rows))
     k = 1 
-    vmin = -2.5
-    vmax = 3.5 
+    vmin = -1.7
+    vmax = 1.7
     levels = np.linspace(vmin, vmax, 10) 
+    vmax = 2.7
     mlevels = np.linspace(0, vmax, 10) 
+    #levels = 10
+    #mlevels = 10
     
     # Plot original RBF field
     ax = fig.add_subplot(rows, cols, k)
     cf = ax.tricontourf(mesh1.lonCell, mesh1.latCell, field1.zonal, levels=levels, extend='both')
     ax.set_title('Zonal component')
-    ax.set_ylabel('RFB')
+    ax.set_ylabel(label1)
     fig.colorbar(cf, ax=ax)
     k = k + 1 
     
@@ -53,7 +111,7 @@ def plot_fields(mesh1, field1, mesh2, field2, fig_name):
     ax = fig.add_subplot(rows, cols, k)
     cf = ax.tricontourf(mesh2.lonCell, mesh2.latCell, field2.zonal, levels=levels, extend='both')
     fig.colorbar(cf, ax=ax)
-    ax.set_ylabel('Mimetic interpolation')
+    ax.set_ylabel(label2)
     k = k + 1 
     
     ax = fig.add_subplot(rows, cols, k)
@@ -71,28 +129,37 @@ def plot_fields(mesh1, field1, mesh2, field2, fig_name):
     if plot_diff:
         ax = fig.add_subplot(rows, cols, k)
         diff = field2.zonal-field1.zonal
-        #vrange = np.max(np.abs(diff)) 
-        vrange = 0.2785
+        vrange = np.max(np.abs(diff)) 
+        if vrange < 1e-8:
+            vrange = 1e-8
+        #vrange = 0.2785
         levels = np.linspace(-vrange, vrange, 10)
+        #levels = 10
         cf = ax.tricontourf(mesh1.lonCell, mesh1.latCell, diff, cmap='RdBu', levels=levels)
         fig.colorbar(cf, ax=ax)
-        ax.set_ylabel('Mimetic-RBF')
+        ax.set_ylabel(f'{label2}-{label1}')
         k = k + 1
 
         ax = fig.add_subplot(rows, cols, k)
         diff = field2.meridional-field1.meridional
-        #vrange = np.max(np.abs(diff)) 
-        vrange = 0.3598
+        vrange = np.max(np.abs(diff)) 
+        if vrange < 1e-8:
+            vrange = 1e-8
+        #vrange = 0.3598
         levels = np.linspace(-vrange, vrange, 10)
+        #levels = 10
         cf = ax.tricontourf(mesh1.lonCell, mesh1.latCell, diff, cmap='RdBu', levels=levels)
         fig.colorbar(cf, ax=ax)
         k = k + 1
 
         ax = fig.add_subplot(rows, cols, k)
         diff = mag2-mag1
-        #vrange = np.max(np.abs(diff)) 
-        vrange = 0.3887
+        vrange = np.max(np.abs(diff)) 
+        if vrange < 1e-8:
+            vrange = 1e-8
+        #vrange = 0.3887
         levels = np.linspace(-vrange, vrange, 10)
+        #levels = 10
         cf = ax.tricontourf(mesh1.lonCell, mesh1.latCell, diff, cmap='RdBu', levels=levels)
         fig.colorbar(cf, ax=ax)
         k = k + 1
