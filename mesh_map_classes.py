@@ -95,11 +95,15 @@ class Field:
     def set_edge_field(self, function, mesh):
 
         flon_edge, flat_edge = function(mesh.lonEdge, mesh.latEdge)
+
+        self.edge = np.cos(mesh.angleEdge)*flon_edge + np.sin(mesh.angleEdge)*flat_edge
+ 
+    def set_cell_field(self, function, mesh):
+
         flon_cell, flat_cell = function(mesh.lonCell, mesh.latCell)
 
         self.zonal = flon_cell
         self.meridional = flat_cell
-        self.edge = np.cos(mesh.angleEdge)*flon_edge + np.sin(mesh.angleEdge)*flat_edge
 
     def average_to_edges(self, mesh):
 
