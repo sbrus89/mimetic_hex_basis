@@ -4,7 +4,7 @@ from scipy.sparse import coo_array
 import time
 import xarray as xr
 import netCDF4 as nc4
-from progressbar import ProgressBar, Percentage, Bar, ETA
+from progressbar import ProgressBar, Percentage, Bar, ETA, Timer
 
 from basis import wachpress_vec, vector_basis
 from coordinates import edge_normal, transform_coordinates_forward, transform_coordinates_inverse, parameterize_integration, transform_vector_components_latlon_uv, transform_vector_components_uv_latlon
@@ -19,7 +19,7 @@ def interp_edges(function, target, target_field, gnomonic=True):
     print("Intergrate function along edges")
     print(f'   number of edges: {target.nEdges}')
 
-    widgets = ['Integrating: ', Percentage(), ' ', Bar(), ' ', ETA()]
+    widgets = ['Integrating: ', Percentage(), ' ', Bar(), ' ', Timer(), ' ', ETA()]
     progress_bar = ProgressBar(widgets=widgets,
                                maxval=target.nEdges).start()
     
@@ -87,7 +87,7 @@ def remap_edges(source, target, edge_mapping, source_field, target_field, gnomon
     print(f'   target edges: {target.nEdges}')
     print(f'   source edges: {source.nEdges}')
 
-    widgets = ['Remapping: ', Percentage(), ' ', Bar(), ' ', ETA()]
+    widgets = ['Remapping: ', Percentage(), ' ', Bar(), ' ', Timer(), ' ',ETA()]
     progress_bar = ProgressBar(widgets=widgets,
                                maxval=target.nEdges).start()
 
@@ -254,7 +254,7 @@ def reconstruct_edges_to_centers(mesh, field_source, field_target, gnomonic):
     print(f'   number of cells: {mesh.nCells}')
     print(f'   number of edge: {mesh.nEdges}')
 
-    widgets = ['Reconstructing: ', Percentage(), ' ', Bar(), ' ', ETA()]
+    widgets = ['Reconstructing: ', Percentage(), ' ', Bar(), ' ', Timer(), ' ', ETA()]
     progress_bar = ProgressBar(widgets=widgets,
                                maxval=mesh.nCells).start()
 
