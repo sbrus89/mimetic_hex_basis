@@ -9,7 +9,7 @@ from progressbar import ProgressBar, Percentage, Bar, ETA, Timer
 from basis import wachpress_vec, vector_basis
 from coordinates import edge_normal, transform_coordinates_forward, transform_coordinates_inverse, parameterize_integration, transform_vector_components_latlon_uv, transform_vector_components_uv_latlon
 
-from plotting import plot_cell_reconstruct, plot_interp_edge, plot_remap
+from plotting import plot_cell_reconstruct, plotRemap, plotInterp
 
 color_list = ['tab:blue', 'tab:orange', 'tab:green', 'tab:red', 'tab:purple', 'tab:brown', 'tab:pink']
 
@@ -26,47 +26,74 @@ def interp_edges(function, target, target_field, gnomonic=True):
     t, w_gp = np.polynomial.legendre.leggauss(5)
     t = np.expand_dims(t, axis=1)
     
-    #plot_edge = True
-    plot_edge = False
 
     target_field.edge = np.zeros((target.nEdges))
     edge_len_diff = np.zeros((target.nEdges))
+    plot = plotInterp(target.nEdges)
     for edge in range(target.nEdges): 
     
         #print(edge)
+        # Find local edge number for global edge on cell 0 
+        cell = target.cellsOnEdge[edge,0] - 1
+        iEdge = np.where(target.edgesOnCell[cell,:] == edge + 1)[0][0]
+        n = target.nEdgesOnCell[cell]
+        iEdgep1 = (iEdge+1) % n
 
         # projection center
-        lon0 = target.lonEdge[edge]
-        lat0 = target.latEdge[edge]
-   
+        #lon0 = target.lonEdge[edge]
+        #lat0 = target.latEdge[edge]
+        lon0 = target.lonCell[cell]
+        lat0 = target.latCell[cell]
+
         # Get normal vector for target edge 
-        vertices = target.verticesOnEdge[edge, 0:2] - 1  
-        uVertex, vVertex, wVertex  = transform_coordinates_forward(target.lonVertex[vertices], target.latVertex[vertices], lon0, lat0, gnomonic)
-        nu, nv = edge_normal(uVertex[0], vVertex[0], uVertex[1], vVertex[1])
+        vertices = target.verticesOnCell[cell, 0:n] - 1
+        vertices = np.roll(vertices, 1) # this is important to account for how mpas defines vertices on an edge
+        uVertex, vVertex, wVertex = transform_coordinates_forward(target.lonVertex[vertices], target.latVertex[vertices], lon0, lat0, gnomonic)
+        nu, nv = edge_normal(uVertex[iEdge], vVertex[iEdge], uVertex[iEdgep1], vVertex[iEdgep1])
+
+        ## projection center
+        #lon0 = target.lonEdge[edge]
+        #lat0 = target.latEdge[edge]
+   
+        ## Get normal vector for target edge 
+        #vertices = target.verticesOnEdge[edge, 0:2] - 1  
+        #uVertex, vVertex, wVertex  = transform_coordinates_forward(target.lonVertex[vertices], target.latVertex[vertices], lon0, lat0, gnomonic)
+        #nu, nv = edge_normal(uVertex[0], vVertex[0], uVertex[1], vVertex[1])
+
+        #print("edge", edge)
+        #print(target.verticesOnEdge[edge, 0:2]-1)
+        #print(vertices[iEdge], vertices[iEdgep1])
 
         # Evaluate function at edge quadrature points
-        lon1 = np.expand_dims(target.lonVertex[vertices[0]], axis=0)
-        lat1 = np.expand_dims(target.latVertex[vertices[0]], axis=0)
-        lon2 = np.expand_dims(target.lonVertex[vertices[1]], axis=0)
-        lat2 = np.expand_dims(target.latVertex[vertices[1]], axis=0)
+        lon1 = np.expand_dims(target.lonVertex[vertices[iEdge]], axis=0)
+        lat1 = np.expand_dims(target.latVertex[vertices[iEdge]], axis=0)
+        lon2 = np.expand_dims(target.lonVertex[vertices[iEdgep1]], axis=0)
+        lat2 = np.expand_dims(target.latVertex[vertices[iEdgep1]], axis=0)
         ds, u, v, w = parameterize_integration(lon0, lat0, lon1, lat1, lon2, lat2, t, gnomonic)
         lon, lat = transform_coordinates_inverse(u, v, w, lon0, lat0, gnomonic)
         flon, flat = function(lon, lat) 
         fu, fv = transform_vector_components_latlon_uv(lon0, lat0, lon, lat, flon, flat, gnomonic)
 
+        plot_edge = False
+        if cell == 14508:
+            plot_edge = True
+
         if plot_edge:
-            plot_interp_edge(uVertex, vVertex, u, v, nu, nv, fu, fv, flon, flat)
+            plot.plot_interp_edge(edge, n, iEdge, uVertex, vVertex, u, v, nu, nv, fu, fv, flon, flat, function, lon0, lat0, gnomonic)
 
         # compute integral over edge
         L = np.sum(w_gp*ds)
+        #print(L, target.dvEdge[edge])
         integral = np.sum(w_gp*(fu*nu + fv*nv)*ds)
+        #target_field.edge[edge] = -target.edgeSignOnCell[cell, iEdge]*integral/L
         target_field.edge[edge] = integral/L
 
-        edge_len_diff[edge] = np.abs(L - target.dvEdge[edge])
+        #edge_len_diff[edge] = np.abs(L - target.dvEdge[edge])
 
         progress_bar.update(edge)
      
     progress_bar.finish()
+    plot.plot_finalize()
 
     ds = nc4.Dataset(target.mesh_filename, "r+")
     nc_vars = ds.variables.keys()
@@ -102,19 +129,23 @@ def remap_edges(source, target, edge_mapping, source_field, target_field, gnomon
     row = np.zeros_like(data, dtype=np.int64)
     col = np.zeros_like(data, dtype=np.int64)
     m = 0
+
+    plot = plotRemap()
     for edge in range(target.nEdges):
 
         #print(edge)
-
-        # projection center
-        lon0 = target.lonEdge[edge]
-        lat0 = target.latEdge[edge]
 
         # Find local edge number for global edge on cell 0 
         cell_target = target.cellsOnEdge[edge,0] - 1
         iEdge = np.where(target.edgesOnCell[cell_target,:] == edge + 1)[0][0]
         n_target = target.nEdgesOnCell[cell_target]
         iEdgep1 = (iEdge+1) % n_target
+
+        # projection center
+        lon0 = target.lonEdge[edge]
+        lat0 = target.latEdge[edge]
+        #lon0 = target.lonCell[cell_target]
+        #lat0 = target.latCell[cell_target]
 
         # Get normal vector for target edge 
         vertices = target.verticesOnCell[cell_target, 0:n_target] - 1
@@ -129,6 +160,7 @@ def remap_edges(source, target, edge_mapping, source_field, target_field, gnomon
         lat2 = target.latVertex[target.verticesOnEdge[edge,1]-1]
         ds_quad, u_quad, v_quad, w_quad  = parameterize_integration(lon0, lat0, lon1, lat1, lon2, lat2, t, gnomonic)
         L_target = np.sum(w_gp*ds_quad.T)
+        #L_target = target.dvEdge[edge]
 
         jEdge = (iEdge-1) % n_target # this is important fot getting edge right in cells_assoc, lon/lat_sub_edge
         n_sub_edges = edge_mapping.nb_sub_edges[cell_target, jEdge]
@@ -139,9 +171,9 @@ def remap_edges(source, target, edge_mapping, source_field, target_field, gnomon
         #else:
         #    plot_edge = True
 
-        if plot_edge:
-            fig = plt.figure()
-            ax = fig.add_subplot(111)
+        #if cell_target == 1919:
+        #    plot_edge = True
+
 
         for sub_edge in range(n_sub_edges):
             #print(f'   {sub_edge}')
@@ -178,7 +210,7 @@ def remap_edges(source, target, edge_mapping, source_field, target_field, gnomon
             ds_quad = np.squeeze(ds_quad)
 
             if plot_edge:
-                plot_remap(sub_edge, ax, n_target, iEdge, uVertex_target, vVertex_target, nu_target, nv_target, n, uVertex, vVertex, uv, u, v, u_quad, v_quad, nu, nv)
+                plot.plot_remap(sub_edge, n_sub_edges, n_target, iEdge, uVertex_target, vVertex_target, nu_target, nv_target, n, uVertex, vVertex, uv, u, v, u_quad, v_quad, nu, nv)
 
             for i in range(n):
                 edge_source = source.edgesOnCell[sub_edge_cell,i] - 1
@@ -198,6 +230,7 @@ def remap_edges(source, target, edge_mapping, source_field, target_field, gnomon
 
                 # compute reconstruction 
                 L_source = np.sum(w_gp*ds[i,:])
+                #L_source = source.dvEdge[edge_source]
                 integral = np.sum(w_gp*(Phiu*nu_target + Phiv*nv_target)*ds_quad)
                 coef = -source.edgeSignOnCell[sub_edge_cell, i]*L_source*integral/L_target
                 target_field.edge[edge] = target_field.edge[edge] + coef*source_field.edge[edge_source]
@@ -292,7 +325,7 @@ def reconstruct_edges_to_centers(mesh, field_source, field_target, gnomonic):
         vCell = np.expand_dims(np.asarray([vCell]), axis=0)
         phi_cell = wachpress_vec(n, uv, uCell, vCell)
 
-        # Evaluate watchpress functions at quadrature points 
+        # Evaluate watchpress functions at quadrature points along edges (for normalization)
         lon1 = np.expand_dims(mesh.lonVertex[vertices], axis=1)
         lat1 = np.expand_dims(mesh.latVertex[vertices], axis=1)
         lon2 = np.expand_dims(mesh.lonVertex[vertices_p1], axis=1)
@@ -308,7 +341,7 @@ def reconstruct_edges_to_centers(mesh, field_source, field_target, gnomonic):
         for i in range(n):
             edge = mesh.edgesOnCell[cell,i] - 1
 
-            # evaluate basis functions at quadrature points
+            # evaluate basis functions at edge quadrature points
             Phiu, Phiv = vector_basis(n, i, uv, np.expand_dims(phi[:,i,:], axis=-1), norm_factor=1.0)
             Phiu = np.squeeze(Phiu)
             Phiv = np.squeeze(Phiv)
@@ -324,7 +357,9 @@ def reconstruct_edges_to_centers(mesh, field_source, field_target, gnomonic):
 
             # compute reconstruction at cell center
             L = np.sum(w_gp*ds[i,:])
+            #L = mesh.dvEdge[edge] 
             coef = -mesh.edgeSignOnCell[cell, i]*L*field_source.edge[edge]
+            #coef = mesh.edgeSignOnCell[cell, i]*L*field_source.edge[edge]
             fu = fu + coef*Phiu
             fv = fv + coef*Phiv
 

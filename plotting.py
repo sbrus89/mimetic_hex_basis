@@ -3,6 +3,7 @@ import numpy as np
 from shapely.geometry.polygon import Polygon
 from shapely.geometry import Point
 from basis import wachpress_vec, vector_basis
+from coordinates import transform_coordinates_inverse
 
 color_list = ['tab:blue', 'tab:orange', 'tab:green', 'tab:red', 'tab:purple', 'tab:brown', 'tab:pink']
 
@@ -167,27 +168,55 @@ def plot_cell_vector_fields(mesh1, field1, label1, mesh2, field2, label2, fig_na
     plt.savefig(fig_name)
     plt.close()
 
-def plot_interp_edge(uVertex, vVertex, u, v, nu, nv, fu, fv, flon, flat):
+class plotInterp:
 
-    fig = plt.figure()
-    ax = fig.add_subplot(111)
-    ax.scatter(uVertex, vVertex, marker='o', color='k', alpha=0.5)
-    ax.plot([uVertex[0], uVertex[1]], [vVertex[0], vVertex[1]],color='k', alpha=0.5)
-    ax.quiver(0.5*(uVertex[0]+uVertex[1]), 0.5*(vVertex[0]+vVertex[1]), nu, nv) 
-    ax.scatter(u, v, marker='.', color='r')
-    ax.quiver(u, v, fu, fv, color='b')
-    ax.quiver(u, v, flon, flat, color='m')
-    ax.axis('equal')
-    plt.savefig('test_edge.png',dpi=500)
-    plt.close()
-    raise SystemExit(0)
+    def __init__(self, nEdges):
+        fig = plt.figure()
+        self.ax = fig.add_subplot(111)
+        self.edge_list = []
+        self.nEdges = nEdges
+
+    def plot_interp_edge(self, edge, n, iEdge, uVertex, vVertex, u, v, nu, nv, fu, fv, flon, flat, function, lon0, lat0, gnomonic):
+    
+        Nx = 100
+        Ny = 100 
+        N = 5
+        ulin = np.linspace(np.min(uVertex), np.max(uVertex), Nx) 
+        vlin = np.linspace(np.min(vVertex), np.max(vVertex), Ny) 
+        uu, vv = np.meshgrid(ulin, vlin)
+        ww = uu*0.0
+
+        lon, lat = transform_coordinates_inverse(uu, vv, ww, lon0, lat0, gnomonic)
+        fflon, fflat = function(lon, lat)
+
+        self.ax.quiver(uu[::N,::N],vv[::N,::N],fflon[::N,::N],fflat[::N,::N])
+
+        self.ax.scatter(uVertex, vVertex, marker='o', color='k', alpha=0.5)
+        for j in range(n):
+            jp1 = (j+1) % n
+            self.ax.plot([uVertex[j], uVertex[jp1]], [vVertex[j], vVertex[jp1]], color='k', alpha=0.5)
+        iEdgep1 = (iEdge+1) % n
+        self.ax.quiver(0.5*(uVertex[iEdge]+uVertex[iEdgep1]), 0.5*(vVertex[iEdge]+vVertex[iEdgep1]), nu, nv)
+
+        self.ax.scatter(u, v, marker='x', color='r')
+
+        self.ax.quiver(u, v, fu, fv, color='b')
+        self.ax.quiver(u, v, flon, flat, color='m')
+
+        self.edge_list.append(iEdge)
+
+    def plot_finalize(self):
+        self.ax.axis('equal')
+        plt.savefig('test_edge.png',dpi=500)
+        plt.close()
+        raise SystemExit(0)
 
 def plot_cell_reconstruct(fig, n, i, uCell, vCell, uVertex, vVertex, uv, u, v, nu, nv, norm_factor):
 
     ax = fig.add_subplot(3,3,i+1)
     ax.scatter(uCell, vCell, marker='o', color='k', alpha=0.5)
     
-    Nx = 100 
+    Nx = 100
     Ny = 100 
     N = 5 
     x = np.linspace(np.min(uVertex), np.max(uVertex), Nx) 
@@ -220,37 +249,57 @@ def plot_cell_reconstruct(fig, n, i, uCell, vCell, uVertex, vVertex, uv, u, v, n
         plt.close()
         raise SystemExit(0)
 
-def plot_remap(sub_edge, ax, n_target, iEdge, uVertex_target, vVertex_target, nu_target, nv_target, n, uVertex, vVertex, uv, u, v, u_quad, v_quad, nu, nv):
+class plotRemap:
 
-    # Plot target cell
-    if sub_edge == 0:
-        iEdgep1 = (iEdge+1) % n_target
-        ax.scatter(uVertex, vVertex, marker='o', color='k', alpha=0.5)
+    def __init__(self):
+
+        self.target_edge_list = []
+        
+
+    def plot_remap(self, sub_edge, n_sub_edges, n_target, iEdge, uVertex_target, vVertex_target, nu_target, nv_target, n, uVertex, vVertex, uv, u, v, u_quad, v_quad, nu, nv):
+
+        if sub_edge == 0:
+           fig = plt.figure()
+           self.ax = fig.add_subplot(111)
+    
+        # Plot target cell
+        self.ax.scatter(uVertex_target, vVertex_target, marker='o', color='k', alpha=0.5)
         for j in range(n):
             jp1 = (j+1) % n
-            ax.plot([uVertex_target[j], uVertex_target[jp1]], [vVertex_target[j], vVertex_target[jp1]],color='k', alpha=0.5)
-        ax.quiver(0.5*(uVertex_target[iEdge]+uVertex_target[iEdgep1]), 0.5*(vVertex_target[iEdge]+vVertex_target[iEdgep1]), nu_target, nv_target)
+            self.ax.plot([uVertex_target[j], uVertex_target[jp1]], [vVertex_target[j], vVertex_target[jp1]],color='k', alpha=0.5)
 
-    i = np.arange(n)
-    ip1 = (i+1) % n
+        # Plot target edge normal
+        iEdgep1 = (iEdge+1) % n_target
+        self.ax.quiver(0.5*(uVertex_target[iEdge]+uVertex_target[iEdgep1]), 0.5*(vVertex_target[iEdge]+vVertex_target[iEdgep1]), nu_target, nv_target)
+    
+        i = np.arange(n)
+        ip1 = (i+1) % n
 
-    # Plot source cell edges
-    ax.plot([uVertex[i], uVertex[ip1]], [vVertex[i], vVertex[ip1]],color=color_list[sub_edge], alpha=0.5)
+        color = color_list[sub_edge % len(color_list)]
+    
+        # Plot source cell edges
+        self.ax.plot([uVertex[i], uVertex[ip1]], [vVertex[i], vVertex[ip1]],color=color, alpha=0.5)
+    
+        # Plot source cell vertices
+        #self.ax.scatter(uVertex, vVertex, marker='o', color=color)
+    
+        # Plot quadrature points along target edge
+        self.ax.scatter(u_quad, v_quad, marker='x', color=color)
+    
+        # Plot edge normalization quadrature points
+        #self.ax.scatter(u, v, marker='.', color=color)
+    
+        # Plot source cell normals
+        #self.ax.quiver(0.5*(uv[i,0]+uv[ip1,0]), 0.5*(uv[i,1]+uv[ip1,1]), nu[i], nv[i], color=color)
 
-    # Plot source cell vertices
-    ax.scatter(uVertex, vVertex, marker='o', color=color_list[sub_edge], alpha=0.5)
+        if iEdge not in self.target_edge_list:
+            self.target_edge_list.append(iEdge)
 
-    # Plot quadrature points along target edge
-    ax.scatter(u_quad, v_quad, marker='x', color=color_list[sub_edge])
-
-    # Plot edge normalization quadrature points
-    ax.scatter(u, v, marker='.', color=color_list[sub_edge])
-
-    # Plot source cell normals
-    ax.quiver(0.5*(uv[i,0]+uv[ip1,0]), 0.5*(uv[i,1]+uv[ip1,1]), nu[i], nv[i], color=color_list[sub_edge])
-
-    ax.axis('equal')
-    plt.savefig('test_cell.png',dpi=500)
-    plt.close()
-    raise SystemExit(0)
-
+        if sub_edge == n_sub_edges -1:
+            self.ax.axis('equal')
+            plt.savefig(f'test_cell_{iEdge}.png',dpi=500)
+            plt.close()
+    
+        if len(self.target_edge_list) == n_target and sub_edge == n_sub_edges-1:
+            raise SystemExit(0)
+    

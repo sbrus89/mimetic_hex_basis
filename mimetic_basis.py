@@ -23,8 +23,8 @@ gnomonic = False
 
 
 
-#skip_test = True
-skip_test = False
+skip_test = True
+#skip_test = False
 if not skip_test:
     #######################################################################
     #######################################################################
@@ -456,23 +456,42 @@ if not skip_test:
 # Remap MPAS edge field from 16km to 32km 
 ############################################
 print("")
-#use_exact_field = True
-use_exact_field = False
+use_exact_field = True
+#use_exact_field = False
 
 #skip_remap = True
 skip_remap = False
 if not skip_remap:
 
-    source_mesh_filename = 'soma_16km_mpas_mesh_with_rbf_weights.nc'
-    target_mesh_filename = 'soma_32km_mpas_mesh_with_rbf_weights.nc'
-    edge_information_filename = 'target_edge.nc'
+    #source_mesh_filename = 'soma_16km_mpas_mesh_with_rbf_weights.nc'
+    #target_mesh_filename = 'soma_32km_mpas_mesh_with_rbf_weights.nc'
+    #edge_information_filename = 'target_edge_iulian.nc'
+
+    #source_mesh_filename = '32km_mesh_culled.nc'
+    #target_mesh_filename = '32km_mesh_culled.nc'
+    #edge_information_filename = 'target_edge_4to32.nc'
+
+    #source_mesh_filename = '4km_mesh.nc'
+    #target_mesh_filename = '32km_mesh_culled.nc'
+    #edge_information_filename = 'target_edge_4to32.nc'
+
+    source_mesh_filename = '16km_mesh_culled.nc'
+    target_mesh_filename = '32km_mesh_culled_16to32.nc'
+    edge_information_filename = 'target_edge_16to32.nc'
+
+    #source_mesh_filename = '4km_mesh.nc'
+    #target_mesh_filename = '16km_mesh_culled.nc'
+    #edge_information_filename = 'target_edge_4to16_iulian.nc'
    
     # Create mesh, mapping, and field objects 
     source = Mesh(source_mesh_filename)
     target = Mesh(target_mesh_filename)
     edge_mapping = Mapping(edge_information_filename)
+    print("Read source field")
     source_field = Field(source_mesh_filename, source)
+    print("\nRead target field")
     target_field = Field(target_mesh_filename, target) 
+    print("\nRead exact source field")
     source_exact = Field(source_mesh_filename, source)
 
     source_res = [s for s in source_mesh_filename.split('_') if "km" in s][0]
@@ -481,13 +500,14 @@ if not skip_remap:
     if use_exact_field: 
         #source_field.set_edge_field(function, source)
         interp_edges(function, source, source_field, gnomonic)
-        source_exact.set_edge_field(function, source)
+        source_exact.set_cell_field(function, source)
 
         reconstruct_edges_to_centers(source, source_field, source_field, gnomonic)
 
-        target_field.set_edge_field(function, target)
+        #target_field.set_edge_field(function, target)
+        print("\nRead exact target field")
         target_exact = Field(target_mesh_filename, target)
-        target_exact.set_edge_field(function, target)
+        target_exact.set_cell_field(function, target)
 
     plot_cell_vector_fields(source, source_field, 'interpolated', source, source_exact, 'exact', f'source_cell_field_{source_res}.png')
     plot_edge_fields(source, source_field, 'interpolated', source, source_exact, 'exact', f'source_edge_field_{source_res}.png')
@@ -520,16 +540,17 @@ if not skip_remap:
 #mesh_filename = 'soma_32km_mpas_mesh_with_rbf_weights.nc'
 mesh_filename = target_mesh_filename
 mesh = Mesh(mesh_filename)
+print("\nRead target field")
 field_s = Field(mesh_filename, mesh)
+print("\nRead target field")
 field_t = Field(mesh_filename, mesh)
+
 
 # read in fields
 if not skip_remap:
     field_s.edge = target_field.edge
 
 reconstruct_edges_to_centers(mesh, field_s, field_t, gnomonic)
-
-target_exact.set_cell_field(function, target)
 
 # Write fields to file
 ds = nc4.Dataset(mesh.mesh_filename, "r+")
