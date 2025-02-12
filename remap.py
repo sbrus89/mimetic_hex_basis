@@ -76,7 +76,7 @@ def interp_edges(function, target, target_field, gnomonic=True):
         var = ds.createVariable("barotropicThicknessFlux", np.float64, ("Time","nEdges"))
         var[0,:] = target_field.edge[:]
     else:
-       var = ds.variables["barotropicThicknessFlux"][:]
+       var = ds.variables["barotropicThicknessFlux"]
        var[0,:] = target_field.edge[:]
     ds.close()
 
@@ -238,7 +238,7 @@ def remap_edges(source, target, edge_mapping, source_field, target_field, gnomon
         var = ds.createVariable("barotropicThicknessFluxRemapped", np.float64, ("Time","nEdges"))
         var[0,:] = target_field.edge[:]
     else:
-       var = ds.variables["barotropicThicknessFluxRemapped"][:]
+       var = ds.variables["barotropicThicknessFluxRemapped"]
        var[0,:] = target_field.edge[:]
     ds.close()
 
@@ -345,8 +345,8 @@ def reconstruct_edges_to_centers(mesh, field_source, field_target, gnomonic):
         zonal[0,:] = field_target.zonal[:]
         meridional[0,:] = field_target.meridional[:]
     else:
-       zonal = ds.variables["barotropicThicknessFluxZonalRemapped"][:]
+       zonal = ds.variables["barotropicThicknessFluxZonalRemapped"]
        zonal[0,:] = field_target.zonal[:]
-       meridional = ds.variables["barotropicThicknessFluxMeridionalRemapped"][:]
+       meridional = ds.variables["barotropicThicknessFluxMeridionalRemapped"]
        meridional[0,:] = field_target.meridional[:]
     ds.close()

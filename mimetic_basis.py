@@ -509,7 +509,7 @@ if not skip_remap:
         var = ds.createVariable("barotropicThicknessFluxDiff", np.float64, ("Time","nEdges"))
         var[0,:] = target_field.edge[:] - target_exact.edge[:]
     else:
-        var = ds.variables["barotropicThicknessFluxDiff"][:]
+        var = ds.variables["barotropicThicknessFluxDiff"]
         var[0,:] = target_field.edge[:] - target_exact.edge[:]
     ds.close()
 
@@ -542,8 +542,8 @@ if 'barotropicThicknessFluxZonalDiff' not in nc_vars:
     zonal[0,:] = field_t.zonal[:] - target_exact.zonal[:]
     meridional[0,:] = field_t.meridional[:] - target_exact.meridional[:]
 else:
-    zonal = ds.variables["barotropicThicknessFluxZonalDiff"][:]
-    meridional = ds.variables["barotropicThicknessFluxMeridionalDiff"][:]
+    zonal = ds.variables["barotropicThicknessFluxZonalDiff"]
+    meridional = ds.variables["barotropicThicknessFluxMeridionalDiff"]
     zonal[0,:] = field_t.zonal[:] - target_exact.zonal[:]
     meridional[0,:] = field_t.meridional[:] - target_exact.meridional[:]
 
@@ -553,8 +553,8 @@ if 'barotropicThicknessFluxZonal' not in nc_vars:
     zonal[0,:] = target_exact.zonal[:]
     meridional[0,:] = target_exact.meridional[:]
 else:
-    zonal = ds.variables["barotropicThicknessFluxZonal"][:]
-    meridional = ds.variables["barotropicThicknessFluxMeridional"][:]
+    zonal = ds.variables["barotropicThicknessFluxZonal"]
+    meridional = ds.variables["barotropicThicknessFluxMeridional"]
     zonal[0,:] = target_exact.zonal[:]
     meridional[0,:] = target_exact.meridional[:]
 ds.close()
