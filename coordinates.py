@@ -185,7 +185,7 @@ def transform_vector_components(lon0, lat0, lon, lat, gnomonic):
     A[2,0,:] = dzdr/alpha; A[2,1,:] = dzdlon/beta; A[2,2,:] = dzdlat/gamma;
 
     if gnomonic:
-        u, v, w = transform_coordinates_forward(lon, lat, lon0, lat0)
+        u, v, w = transform_coordinates_forward(lon, lat, lon0, lat0, gnomonic)
         dlondu, dlondv, dlondw, dlatdu, dlatdv, dlatdw = latlon_uv_jacobian(u, v, lon0, lat0)
         drdw = 1.0
 
