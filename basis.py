@@ -75,18 +75,16 @@ def vector_basis(n, i, v, phi, norm_factor=1.0):
 
     vix = (v[i,0] - v[i-1,0])
     viy = (v[i,1] - v[i-1,1])
-    vi_mag = np.sqrt(vix**2 + viy**2)
-    vix = vix/vi_mag
-    viy = viy/vi_mag
+    den = (v[i,0]-v[i-1,0])*(v[i,1]-v[ip1,1]) - (v[i,1]-v[i-1,1])*(v[i,0]-v[ip1,0])
+    a = ((v[i,1]-v[ip1,1]) + (v[ip1,0]-v[i,0]))/den
 
     vip1x = (v[ip1,0] - v[ip2,0])
     vip1y = (v[ip1,1] - v[ip2,1])
-    vip1_mag = np.sqrt(vip1x**2 + vip1y**2)
-    vip1x = vip1x/vip1_mag
-    vip1y = vip1y/vip1_mag
-
-    Phix = vix*phi[i,:,:] + vip1x*phi[ip1,:,:]
-    Phiy = viy*phi[i,:,:] + vip1y*phi[ip1,:,:]
+    den = (v[ip1,0]-v[i,0])*(v[ip1,1]-v[ip2,1]) - (v[ip1,1]-v[i,1])*(v[ip1,0]-v[ip2,0])
+    b = ((v[i,1]-v[ip1,1]) + (v[ip1,0]-v[i,0]))/den
+     
+    Phix = a*vix*phi[i,:,:] + b*vip1x*phi[ip1,:,:]
+    Phiy = a*viy*phi[i,:,:] + b*vip1y*phi[ip1,:,:]
 
     return Phix/norm_factor, Phiy/norm_factor
 
