@@ -3,7 +3,8 @@ import numpy as np
 from shapely.geometry.polygon import Polygon
 from shapely.geometry import Point
 from basis import wachpress_vec, vector_basis
-from coordinates import transform_coordinates_inverse
+from coordinates import transform_coordinates_inverse, transform_vector_components_uv_latlon
+from scipy.spatial import KDTree
 
 color_list = ['tab:blue', 'tab:orange', 'tab:green', 'tab:red', 'tab:purple', 'tab:brown', 'tab:pink']
 
@@ -101,9 +102,20 @@ def plot_cell_vector_fields(mesh1, field1, label1, mesh2, field2, label2, fig_na
     fig.colorbar(cf, ax=ax)
     k = k + 1 
     
+    dx = 0.02
+    x = np.arange(np.min(mesh1.lonCell), np.max(mesh1.lonCell), dx)
+    y = np.arange(np.min(mesh1.latCell), np.max(mesh1.latCell), dx)
+    xx, yy = np.meshgrid(x,y)
+    xy = np.vstack((xx.ravel(), yy.ravel())).T
+
+    tree = KDTree(xy)
+    pts = np.vstack((mesh1.lonCell.ravel(), mesh1.latCell.ravel())).T
+    d, idx = tree.query(pts)
+
     ax = fig.add_subplot(rows, cols, k)
     mag1 = np.sqrt(field1.zonal**2 + field1.meridional**2)
     cf = ax.tricontourf(mesh1.lonCell, mesh1.latCell, mag1, levels=mlevels, extend='max')
+    ax.quiver(mesh1.lonCell[idx], mesh1.latCell[idx], field1.zonal[idx], field1.meridional[idx], scale=35)
     ax.set_title('Magnitude')
     fig.colorbar(cf, ax=ax)
     k = k + 1 
@@ -120,9 +132,12 @@ def plot_cell_vector_fields(mesh1, field1, label1, mesh2, field2, label2, fig_na
     fig.colorbar(cf, ax=ax)
     k = k + 1 
     
+    pts = np.vstack((mesh2.lonCell.ravel(), mesh2.latCell.ravel())).T
+    d, idx = tree.query(pts)
     ax = fig.add_subplot(rows, cols, k)
     mag2 = np.sqrt(field2.zonal**2 + field2.meridional**2)
     cf = ax.tricontourf(mesh2.lonCell, mesh2.latCell, mag2, levels=mlevels, extend='max')
+    ax.quiver(mesh2.lonCell[idx], mesh2.latCell[idx], field2.zonal[idx], field2.meridional[idx], scale=35)
     fig.colorbar(cf, ax=ax)
     k = k + 1 
 
@@ -170,14 +185,18 @@ def plot_cell_vector_fields(mesh1, field1, label1, mesh2, field2, label2, fig_na
 
 class plotInterp:
 
-    def __init__(self, nEdges):
+    def __init__(self, cell, nEdges):
         fig = plt.figure()
         self.ax = fig.add_subplot(111)
         self.edge_list = []
         self.nEdges = nEdges
+        self.cell = cell
 
-    def plot_interp_edge(self, edge, n, iEdge, uVertex, vVertex, u, v, nu, nv, fu, fv, flon, flat, function, lon0, lat0, gnomonic):
+    def plot_interp_edge(self, cell, edge, n, iEdge, uVertex, vVertex, u, v, nu, nv, fu, fv, flon, flat, function, lon0, lat0, gnomonic):
     
+        if cell != self.cell:
+            return
+
         Nx = 100
         Ny = 100 
         N = 5
@@ -205,58 +224,137 @@ class plotInterp:
 
         self.edge_list.append(iEdge)
 
+        if edge == self.nEdges:
+            self.plot_finalize()
+
     def plot_finalize(self):
         self.ax.axis('equal')
-        plt.savefig('test_edge.png',dpi=500)
+        plt.savefig(f'test_interp_cell_{self.cell}.png',dpi=500)
         plt.close()
         raise SystemExit(0)
 
-def plot_cell_reconstruct(fig, n, i, uCell, vCell, uVertex, vVertex, uv, u, v, nu, nv, norm_factor):
+class plotReconstruct:
 
-    ax = fig.add_subplot(3,3,i+1)
-    ax.scatter(uCell, vCell, marker='o', color='k', alpha=0.5)
+    def __init__(self, cell):
+
+        self.fig =  plt.figure(figsize=(16,8))
+        self.cell = cell
+
+    def plot_cell_reconstruct(self, cell, n, i, uCell, vCell, uVertex, vVertex, uv, u, v, nu, nv, norm_factor, coef, function, lon0, lat0, gnomonic):
+
+        if cell != self.cell:
+            return
+
     
-    Nx = 100
-    Ny = 100 
-    N = 5 
-    x = np.linspace(np.min(uVertex), np.max(uVertex), Nx) 
-    y = np.linspace(np.min(vVertex), np.max(vVertex), Ny) 
-    xx, yy = np.meshgrid(x, y)
-    mask = np.array(xx.ravel(),dtype='bool')
-    xy = np.vstack((xx.ravel(), yy.ravel())).T
-    polygon = Polygon(uv)
-    for pt in range(Nx*Ny):
-        p = Point(xy[pt])
-        mask[pt] = polygon.contains(p)
-    mask = mask.reshape(xx.shape)
-    phi_vec_grid = wachpress_vec(n, uv, xx, yy) 
-    phi_vec_grid[:,~mask] = np.nan
-    Phix, Phiy = vector_basis(n, i, uv, phi_vec_grid, norm_factor=norm_factor)
-    cr = np.linspace(0,1.0,10)
-    c = ax.contourf(xx, yy, np.sqrt(np.square(Phix)+np.square(Phiy)))
-    cbar = fig.colorbar(c)
-    ax.quiver(xx[::N,::N],yy[::N,::N],Phix[::N,::N],Phiy[::N,::N])
-    for j in range(n):
-        jp1 = (j+1) % n 
-        ax.scatter(uVertex[j],vVertex[j],marker='o', color=color_list[j])
-        ax.plot([uVertex[j], uVertex[jp1]], [vVertex[j], vVertex[jp1]], color=color_list[j], alpha=0.5)
-        ax.scatter(u[j,:], v[j,:], marker='x', color=color_list[j])
-        ax.quiver(0.5*(uv[j,0]+uv[jp1,0]), 0.5*(uv[j,1]+uv[jp1,1]), nu[j], nv[j], color=color_list[j])
-    ax.axis('equal')
+        ax = self.fig.add_subplot(4,3,i+1)
+        ax.scatter(uCell, vCell, marker='o', color='k', alpha=0.5)
+        
+        Nx = 100
+        Ny = 100 
+        N = 5 
+        x = np.linspace(np.min(uVertex), np.max(uVertex), Nx) 
+        y = np.linspace(np.min(vVertex), np.max(vVertex), Ny) 
+        xx, yy = np.meshgrid(x, y)
+        mask = np.array(xx.ravel(),dtype='bool')
+        xy = np.vstack((xx.ravel(), yy.ravel())).T
+        polygon = Polygon(uv)
+        for pt in range(Nx*Ny):
+            p = Point(xy[pt])
+            mask[pt] = polygon.contains(p)
+        mask = mask.reshape(xx.shape)
+        if i == 0:
+            self.fu = np.zeros_like(xx)
+            self.fv = np.zeros_like(xx)
+            self.Phix = np.zeros_like(xx)
+            self.Phiy = np.zeros_like(xx)
 
-    if i == n-1:
-        plt.savefig('test_cell_reconstruct.png',dpi=500)
-        plt.close()
-        raise SystemExit(0)
+
+        phi_vec_grid = wachpress_vec(n, uv, xx, yy) 
+        phi_vec_grid[:,~mask] = np.nan
+        Phix, Phiy = vector_basis(n, i, uv, phi_vec_grid, norm_factor=norm_factor)
+        cr = np.linspace(0,1.0,10)
+        c = ax.contourf(xx, yy, np.sqrt(np.square(Phix)+np.square(Phiy)))
+        cbar = self.fig.colorbar(c)
+        ax.quiver(xx[::N,::N],yy[::N,::N],Phix[::N,::N],Phiy[::N,::N])
+        for j in range(n):
+            jp1 = (j+1) % n 
+            ax.scatter(uVertex[j],vVertex[j],marker='o', color=color_list[j])
+            ax.plot([uVertex[j], uVertex[jp1]], [vVertex[j], vVertex[jp1]], color=color_list[j], alpha=0.5)
+            ax.scatter(u[j,:], v[j,:], marker='x', color=color_list[j])
+            ax.quiver(0.5*(uv[j,0]+uv[jp1,0]), 0.5*(uv[j,1]+uv[jp1,1]), nu[j], nv[j], color=color_list[j])
+        ax.axis('equal')
+
+        self.fu = self.fu + coef*Phix
+        self.fv = self.fv + coef*Phiy
+
+        self.Phix = self.Phix + Phix
+        self.Phiy = self.Phiy + Phiy
+    
+        if i == n-1:
+            lon, lat = transform_coordinates_inverse(xx, yy, xx*0.0, lon0, lat0, gnomonic)
+            shape = xx.shape
+            flon, flat = transform_vector_components_uv_latlon(lon0, lat0, lon.ravel(), lat.ravel(), self.fu.ravel(), self.fv.ravel(), gnomonic)
+            flon = flon.reshape(shape)
+            flat = flat.reshape(shape)
+             
+            ax = self.fig.add_subplot(4,3,i+2)
+            mag_reconstruct = np.sqrt(self.fu**2 + self.fv**2)
+            c = ax.contourf(xx, yy, mag_reconstruct)
+            cbar = self.fig.colorbar(c)
+            ax.quiver(xx[::N,::N],yy[::N,::N],flon[::N,::N],flat[::N,::N])
+            ax.axis('equal')
+
+            fflon, fflat = function(lon, lat)
+            fflon[~mask] = np.nan
+            fflat[~mask] = np.nan
+            ax = self.fig.add_subplot(4,3,i+3)
+            mag_exact = np.sqrt(fflon**2 + fflat**2)
+            c = ax.contourf(xx, yy, mag_exact)
+            cbar = self.fig.colorbar(c)
+            ax.quiver(xx[::N,::N],yy[::N,::N],fflon[::N,::N],fflat[::N,::N])
+            ax.axis('equal')
+
+            ax = self.fig.add_subplot(4,3,i+4)
+            diff = mag_reconstruct - mag_exact
+            vrange = np.nanmax(np.abs(diff)) 
+            levels = np.linspace(-vrange, vrange, 10)
+            c = ax.contourf(xx, yy, diff, cmap='RdBu', levels=levels)
+            cbar = self.fig.colorbar(c)
+            ax.quiver(xx[::N,::N],yy[::N,::N],flon[::N,::N] - fflon[::N,::N],flat[::N,::N] - fflat[::N,::N])
+            ax.axis('equal')
+
+            ax = self.fig.add_subplot(4,3,i+5)
+            c = ax.contourf(xx, yy, self.Phix)
+            cbar = self.fig.colorbar(c)
+            ax.axis('equal')
+
+            ax = self.fig.add_subplot(4,3,i+6)
+            c = ax.contourf(xx, yy, self.Phiy)
+            cbar = self.fig.colorbar(c)
+            ax.axis('equal')
+
+            ax = self.fig.add_subplot(4,3,i+7)
+            mag = np.sqrt(self.Phix**2 + self.Phiy**2)
+            c = ax.contourf(xx, yy, mag)
+            ax.quiver(xx[::N,::N],yy[::N,::N],self.Phix[::N,::N],self.Phiy[::N,::N])
+            cbar = self.fig.colorbar(c)
+            ax.axis('equal')
+
+            plt.savefig(f'test_reconstruct_cell_{cell}.png',dpi=500)
+            plt.close()
 
 class plotRemap:
 
-    def __init__(self):
+    def __init__(self, cell):
 
         self.target_edge_list = []
+        self.cell = cell
         
 
-    def plot_remap(self, sub_edge, n_sub_edges, n_target, iEdge, uVertex_target, vVertex_target, nu_target, nv_target, n, uVertex, vVertex, uv, u, v, u_quad, v_quad, nu, nv):
+    def plot_remap(self, cell, sub_edge, n_sub_edges, n_target, iEdge, uVertex_target, vVertex_target, nu_target, nv_target, n, uVertex, vVertex, uv, u, v, u_quad, v_quad, nu, nv):
+
+        if cell != self.cell: 
+            return
 
         if sub_edge == 0:
            fig = plt.figure()

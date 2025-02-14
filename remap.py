@@ -9,7 +9,7 @@ from progressbar import ProgressBar, Percentage, Bar, ETA, Timer
 from basis import wachpress_vec, vector_basis
 from coordinates import edge_normal, transform_coordinates_forward, transform_coordinates_inverse, parameterize_integration, transform_vector_components_latlon_uv, transform_vector_components_uv_latlon
 
-from plotting import plot_cell_reconstruct, plotRemap, plotInterp
+from plotting import plotReconstruct, plotRemap, plotInterp
 
 color_list = ['tab:blue', 'tab:orange', 'tab:green', 'tab:red', 'tab:purple', 'tab:brown', 'tab:pink']
 
@@ -25,14 +25,13 @@ def interp_edges(function, target, target_field, gnomonic=True):
     
     t, w_gp = np.polynomial.legendre.leggauss(5)
     t = np.expand_dims(t, axis=1)
-    
 
     target_field.edge = np.zeros((target.nEdges))
-    edge_len_diff = np.zeros((target.nEdges))
-    plot = plotInterp(target.nEdges)
+    #cell = 14508
+    cell = -1
+    plot = plotInterp(cell, target.nEdges)
     for edge in range(target.nEdges): 
     
-        #print(edge)
         # Find local edge number for global edge on cell 0 
         cell = target.cellsOnEdge[edge,0] - 1
         iEdge = np.where(target.edgesOnCell[cell,:] == edge + 1)[0][0]
@@ -40,29 +39,16 @@ def interp_edges(function, target, target_field, gnomonic=True):
         iEdgep1 = (iEdge+1) % n
 
         # projection center
-        #lon0 = target.lonEdge[edge]
-        #lat0 = target.latEdge[edge]
-        lon0 = target.lonCell[cell]
-        lat0 = target.latCell[cell]
+        lon0 = target.lonEdge[edge]
+        lat0 = target.latEdge[edge]
+        #lon0 = target.lonCell[cell]
+        #lat0 = target.latCell[cell]
 
         # Get normal vector for target edge 
         vertices = target.verticesOnCell[cell, 0:n] - 1
         vertices = np.roll(vertices, 1) # this is important to account for how mpas defines vertices on an edge
         uVertex, vVertex, wVertex = transform_coordinates_forward(target.lonVertex[vertices], target.latVertex[vertices], lon0, lat0, gnomonic)
         nu, nv = edge_normal(uVertex[iEdge], vVertex[iEdge], uVertex[iEdgep1], vVertex[iEdgep1])
-
-        ## projection center
-        #lon0 = target.lonEdge[edge]
-        #lat0 = target.latEdge[edge]
-   
-        ## Get normal vector for target edge 
-        #vertices = target.verticesOnEdge[edge, 0:2] - 1  
-        #uVertex, vVertex, wVertex  = transform_coordinates_forward(target.lonVertex[vertices], target.latVertex[vertices], lon0, lat0, gnomonic)
-        #nu, nv = edge_normal(uVertex[0], vVertex[0], uVertex[1], vVertex[1])
-
-        #print("edge", edge)
-        #print(target.verticesOnEdge[edge, 0:2]-1)
-        #print(vertices[iEdge], vertices[iEdgep1])
 
         # Evaluate function at edge quadrature points
         lon1 = np.expand_dims(target.lonVertex[vertices[iEdge]], axis=0)
@@ -74,38 +60,18 @@ def interp_edges(function, target, target_field, gnomonic=True):
         flon, flat = function(lon, lat) 
         fu, fv = transform_vector_components_latlon_uv(lon0, lat0, lon, lat, flon, flat, gnomonic)
 
-        plot_edge = False
-        if cell == 14508:
-            plot_edge = True
-
-        if plot_edge:
-            plot.plot_interp_edge(edge, n, iEdge, uVertex, vVertex, u, v, nu, nv, fu, fv, flon, flat, function, lon0, lat0, gnomonic)
+        plot.plot_interp_edge(cell, edge, n, iEdge, uVertex, vVertex, u, v, nu, nv, fu, fv, flon, flat, function, lon0, lat0, gnomonic)
 
         # compute integral over edge
         L = np.sum(w_gp*ds)
-        #print(L, target.dvEdge[edge])
         integral = np.sum(w_gp*(fu*nu + fv*nv)*ds)
-        #target_field.edge[edge] = -target.edgeSignOnCell[cell, iEdge]*integral/L
         target_field.edge[edge] = integral/L
-
-        #edge_len_diff[edge] = np.abs(L - target.dvEdge[edge])
 
         progress_bar.update(edge)
      
     progress_bar.finish()
-    plot.plot_finalize()
 
-    ds = nc4.Dataset(target.mesh_filename, "r+")
-    nc_vars = ds.variables.keys()
-    if 'barotropicThicknessFlux' not in nc_vars:
-        if "Time" not in ds.dimensions:
-            ds.createDimension("Time", None)
-        var = ds.createVariable("barotropicThicknessFlux", np.float64, ("Time","nEdges"))
-        var[0,:] = target_field.edge[:]
-    else:
-       var = ds.variables["barotropicThicknessFlux"]
-       var[0,:] = target_field.edge[:]
-    ds.close()
+    target_field.write_field('barotropicThicknessFlux', target_field.edge)
 
 def remap_edges(source, target, edge_mapping, source_field, target_field, gnomonic=True):
     print("")
@@ -130,7 +96,9 @@ def remap_edges(source, target, edge_mapping, source_field, target_field, gnomon
     col = np.zeros_like(data, dtype=np.int64)
     m = 0
 
-    plot = plotRemap()
+    #cell_target = 1919
+    cell_target = -1
+    plot = plotRemap(cell_target)
     for edge in range(target.nEdges):
 
         #print(edge)
@@ -164,16 +132,6 @@ def remap_edges(source, target, edge_mapping, source_field, target_field, gnomon
 
         jEdge = (iEdge-1) % n_target # this is important fot getting edge right in cells_assoc, lon/lat_sub_edge
         n_sub_edges = edge_mapping.nb_sub_edges[cell_target, jEdge]
-
-        plot_edge = False
-        #if n_sub_edges < 5:
-        #    plot_edge = False
-        #else:
-        #    plot_edge = True
-
-        #if cell_target == 1919:
-        #    plot_edge = True
-
 
         for sub_edge in range(n_sub_edges):
             #print(f'   {sub_edge}')
@@ -209,8 +167,7 @@ def remap_edges(source, target, edge_mapping, source_field, target_field, gnomon
             phi_quad = wachpress_vec(n, uv, u_quad.T, v_quad.T)
             ds_quad = np.squeeze(ds_quad)
 
-            if plot_edge:
-                plot.plot_remap(sub_edge, n_sub_edges, n_target, iEdge, uVertex_target, vVertex_target, nu_target, nv_target, n, uVertex, vVertex, uv, u, v, u_quad, v_quad, nu, nv)
+            plot.plot_remap(cell_target, sub_edge, n_sub_edges, n_target, iEdge, uVertex_target, vVertex_target, nu_target, nv_target, n, uVertex, vVertex, uv, u, v, u_quad, v_quad, nu, nv)
 
             for i in range(n):
                 edge_source = source.edgesOnCell[sub_edge_cell,i] - 1
@@ -263,21 +220,14 @@ def remap_edges(source, target, edge_mapping, source_field, target_field, gnomon
 
     ds.close()
 
-    ds = nc4.Dataset(target.mesh_filename, "r+")
-    nc_vars = ds.variables.keys()
-    if 'barotropicThicknessFluxRemapped' not in nc_vars:
-        if "Time" not in ds.dimensions:
-            ds.createDimension("Time", None)
-        var = ds.createVariable("barotropicThicknessFluxRemapped", np.float64, ("Time","nEdges"))
-        var[0,:] = target_field.edge[:]
-    else:
-       var = ds.variables["barotropicThicknessFluxRemapped"]
-       var[0,:] = target_field.edge[:]
-    ds.close()
+    target_field.write_field('barotropicThicknessFluxRemapped', target_field.edge)
 
 
 
 def reconstruct_edges_to_centers(mesh, field_source, field_target, gnomonic):
+
+    from mesh_map_classes import function
+
     print("")
     print("Reconstruct edges to centers")
     print(f'   number of cells: {mesh.nCells}')
@@ -293,6 +243,15 @@ def reconstruct_edges_to_centers(mesh, field_source, field_target, gnomonic):
 
     field_target.zonal = np.zeros((mesh.nCells))
     field_target.meridional = np.zeros((mesh.nCells))
+
+    #cell = 1919
+    #cell = 14508
+    #cell = 2425
+    cell = 24657
+    plot = plotReconstruct(cell)
+    plot2 = plotReconstruct(22552)
+    plot3 = plotReconstruct(14508)
+    plot4 = plotReconstruct(2425)
     for cell in range(mesh.nCells):
 
         # projection center
@@ -303,14 +262,6 @@ def reconstruct_edges_to_centers(mesh, field_source, field_target, gnomonic):
         vertices = mesh.verticesOnCell[cell, 0:n] - 1
         vertices = np.roll(vertices, 1) # this is important to account for how mpas defines vertices on an edge
         vertices_p1 = np.roll(vertices, -1)
-
-        #plot_cell = True
-        plot_cell = False
-        ##if n == 5:
-        #if cell == 14795:
-        #   plot_cell = True
-        #else:
-        #   plot_cell = False
 
         # Cell vertex coordinates and edge normals in u, v
         uVertex, vVertex, wVertex = transform_coordinates_forward(mesh.lonVertex[vertices], mesh.latVertex[vertices], lon0, lat0, gnomonic)
@@ -333,9 +284,6 @@ def reconstruct_edges_to_centers(mesh, field_source, field_target, gnomonic):
         ds, u, v, w =  parameterize_integration(lon0, lat0, lon1, lat1, lon2, lat2, t, gnomonic)
         phi = wachpress_vec(n, uv, u, v)
 
-        if plot_cell:
-            fig = plt.figure(figsize=(16,8))
-
         fu = np.zeros(uCell.shape)
         fv = np.zeros(vCell.shape)
         for i in range(n):
@@ -352,16 +300,16 @@ def reconstruct_edges_to_centers(mesh, field_source, field_target, gnomonic):
             # compute normalized basis functions at cell centers 
             Phiu, Phiv = vector_basis(n, i, uv, phi_cell, norm_factor=integral)
 
-            if plot_cell:
-                plot_cell_reconstruct(fig, n, i, uCell, vCell, uVertex, vVertex, uv, u, v, nu, nv, integral)
-
             # compute reconstruction at cell center
             L = np.sum(w_gp*ds[i,:])
-            #L = mesh.dvEdge[edge] 
             coef = -mesh.edgeSignOnCell[cell, i]*L*field_source.edge[edge]
-            #coef = mesh.edgeSignOnCell[cell, i]*L*field_source.edge[edge]
             fu = fu + coef*Phiu
             fv = fv + coef*Phiv
+
+            plot.plot_cell_reconstruct(cell, n, i, uCell, vCell, uVertex, vVertex, uv, u, v, nu, nv, integral, coef, function, lon0, lat0, gnomonic)
+            plot2.plot_cell_reconstruct(cell, n, i, uCell, vCell, uVertex, vVertex, uv, u, v, nu, nv, integral, coef, function, lon0, lat0, gnomonic)
+            plot3.plot_cell_reconstruct(cell, n, i, uCell, vCell, uVertex, vVertex, uv, u, v, nu, nv, integral, coef, function, lon0, lat0, gnomonic)
+            plot4.plot_cell_reconstruct(cell, n, i, uCell, vCell, uVertex, vVertex, uv, u, v, nu, nv, integral, coef, function, lon0, lat0, gnomonic)
 
         # compute lon lat vector components
         field_target.zonal[cell], field_target.meridional[cell] = transform_vector_components_uv_latlon(lon0, lat0, mesh.lonCell[cell], mesh.latCell[cell], fu[0,0], fv[0,0], gnomonic)
@@ -370,18 +318,5 @@ def reconstruct_edges_to_centers(mesh, field_source, field_target, gnomonic):
 
     progress_bar.finish()
 
-    ds = nc4.Dataset(mesh.mesh_filename, "r+")
-    nc_vars = ds.variables.keys()
-    if 'barotropicThicknessFluxZonalRemapped' not in nc_vars:
-        if "Time" not in ds.dimensions:
-            ds.createDimension("Time", None)
-        zonal = ds.createVariable("barotropicThicknessFluxZonalRemapped", np.float64, ("Time","nCells"))
-        meridional = ds.createVariable("barotropicThicknessFluxMeridionalRemapped", np.float64, ("Time","nCells"))
-        zonal[0,:] = field_target.zonal[:]
-        meridional[0,:] = field_target.meridional[:]
-    else:
-       zonal = ds.variables["barotropicThicknessFluxZonalRemapped"]
-       zonal[0,:] = field_target.zonal[:]
-       meridional = ds.variables["barotropicThicknessFluxMeridionalRemapped"]
-       meridional[0,:] = field_target.meridional[:]
-    ds.close()
+    field_target.write_field('barotropicThicknessFluxZonalRemapped', field_target.zonal)
+    field_target.write_field('barotropicThicknessFluxMeridionalRemapped', field_target.meridional)

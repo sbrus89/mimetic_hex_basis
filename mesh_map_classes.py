@@ -69,6 +69,10 @@ class Field:
 
         nc_file = nc4.Dataset(field_filename, 'r')
 
+        self.nCells = mesh.nCells
+        self.nEdges = mesh.nEdges
+        self.field_filename = field_filename
+
         try: 
             self.edge = np.squeeze(nc_file.variables['barotropicThicknessFlux'][:])
             print(f"edge field read {self.edge.shape}")
@@ -115,6 +119,29 @@ class Field:
             meridionalEdge = 0.5*(self.meridional[cell1] + self.meridional[cell2])
 
             self.edge[i] = np.cos(mesh.angleEdge[i])*zonalEdge + np.sin(mesh.angleEdge[i])*meridionalEdge
+
+    def write_field(self, varname, values):
+
+        ds = nc4.Dataset(self.field_filename, "r+")
+        nc_vars = ds.variables.keys()
+
+        if values.size == self.nCells:
+            dimid = "nCells"
+        elif values.size == self.nEdges:
+            dimid = "nEdges"
+        else:
+            print("error finding dimension")
+
+        if varname not in nc_vars:
+            if "Time" not in ds.dimensions:
+                ds.createDimension("Time", None)
+            var = ds.createVariable(varname, np.float64, ("Time",dimid))
+            var[0,:] = values
+        else:
+            var = ds.variables[varname]
+            var[0,:] = values
+
+        ds.close()
 
 def function(lon, lat):
 

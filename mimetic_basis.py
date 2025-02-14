@@ -475,13 +475,13 @@ if not skip_remap:
     #target_mesh_filename = '32km_mesh_culled.nc'
     #edge_information_filename = 'target_edge_4to32.nc'
 
-    source_mesh_filename = '16km_mesh_culled.nc'
-    target_mesh_filename = '32km_mesh_culled_16to32.nc'
-    edge_information_filename = 'target_edge_16to32.nc'
+    #source_mesh_filename = '16km_mesh_culled.nc'
+    #target_mesh_filename = '32km_mesh_culled_16to32.nc'
+    #edge_information_filename = 'target_edge_16to32.nc'
 
-    #source_mesh_filename = '4km_mesh.nc'
-    #target_mesh_filename = '16km_mesh_culled.nc'
-    #edge_information_filename = 'target_edge_4to16_iulian.nc'
+    source_mesh_filename = '4km_mesh.nc'
+    target_mesh_filename = '16km_mesh_culled.nc'
+    edge_information_filename = 'target_edge_4to16_iulian.nc'
    
     # Create mesh, mapping, and field objects 
     source = Mesh(source_mesh_filename)
@@ -499,10 +499,11 @@ if not skip_remap:
    
     if use_exact_field: 
         #source_field.set_edge_field(function, source)
-        interp_edges(function, source, source_field, gnomonic)
+        #interp_edges(function, source, source_field, gnomonic)
+        #source_exact.edge = source_field.edge
         source_exact.set_cell_field(function, source)
 
-        reconstruct_edges_to_centers(source, source_field, source_field, gnomonic)
+        #reconstruct_edges_to_centers(source, source_field, source_field, gnomonic)
 
         #target_field.set_edge_field(function, target)
         print("\nRead exact target field")
@@ -521,17 +522,7 @@ if not skip_remap:
         print(rmse) 
 
     # Write fields to file
-    ds = nc4.Dataset(target.mesh_filename, "r+")
-    nc_vars = ds.variables.keys()
-    if 'barotropicThicknessFluxDiff' not in nc_vars:
-        if "Time" not in ds.dimensions:
-            ds.createDimension("Time", None)
-        var = ds.createVariable("barotropicThicknessFluxDiff", np.float64, ("Time","nEdges"))
-        var[0,:] = target_field.edge[:] - target_exact.edge[:]
-    else:
-        var = ds.variables["barotropicThicknessFluxDiff"]
-        var[0,:] = target_field.edge[:] - target_exact.edge[:]
-    ds.close()
+    target_field.write_field('barotropicThicknessFluxDiff', target_field.edge - target_exact.edge)
 
 
 ############################################
@@ -553,36 +544,14 @@ if not skip_remap:
 reconstruct_edges_to_centers(mesh, field_s, field_t, gnomonic)
 
 # Write fields to file
-ds = nc4.Dataset(mesh.mesh_filename, "r+")
-nc_vars = ds.variables.keys()
-if 'barotropicThicknessFluxZonalDiff' not in nc_vars:
-    if "Time" not in ds.dimensions:
-        ds.createDimension("Time", None)
-    zonal = ds.createVariable("barotropicThicknessFluxZonalDiff", np.float64, ("Time","nCells"))
-    meridional = ds.createVariable("barotropicThicknessFluxMeridionalDiff", np.float64, ("Time","nCells"))
-    zonal[0,:] = field_t.zonal[:] - target_exact.zonal[:]
-    meridional[0,:] = field_t.meridional[:] - target_exact.meridional[:]
-else:
-    zonal = ds.variables["barotropicThicknessFluxZonalDiff"]
-    meridional = ds.variables["barotropicThicknessFluxMeridionalDiff"]
-    zonal[0,:] = field_t.zonal[:] - target_exact.zonal[:]
-    meridional[0,:] = field_t.meridional[:] - target_exact.meridional[:]
-
-if 'barotropicThicknessFluxZonal' not in nc_vars:
-    zonal = ds.createVariable("barotropicThicknessFluxZonal", np.float64, ("Time","nCells"))
-    meridional = ds.createVariable("barotropicThicknessFluxMeridional", np.float64, ("Time","nCells"))
-    zonal[0,:] = target_exact.zonal[:]
-    meridional[0,:] = target_exact.meridional[:]
-else:
-    zonal = ds.variables["barotropicThicknessFluxZonal"]
-    meridional = ds.variables["barotropicThicknessFluxMeridional"]
-    zonal[0,:] = target_exact.zonal[:]
-    meridional[0,:] = target_exact.meridional[:]
-ds.close()
+field_t.write_field('barotropicThicknessFluxZonalDiff', field_t.zonal - target_exact.zonal)
+field_t.write_field('barotropicThicknessFluxMeridionalDiff', field_t.meridional - target_exact.meridional)
+field_t.write_field('barotropicThicknessFluxZonal', target_exact.zonal)
+field_t.write_field('barotropicThicknessFluxMeridional', target_exact.meridional)
 
 
 if use_exact_field:
-    plot_cell_vector_fields(mesh, target_exact, 'exact', mesh, field_t, 'reconstruction', f'remapped_cell_field_{source_res}_to_{target_res}.png')
+    plot_cell_vector_fields(mesh, field_t, 'reconstruction', mesh, target_exact, 'exact' ,f'remapped_cell_field_{source_res}_to_{target_res}.png')
     rmse = np.sqrt(np.mean(np.square(target_exact.zonal - field_t.zonal)))
     print(rmse)
     rmse = np.sqrt(np.mean(np.square(target_exact.meridional - field_t.meridional)))
