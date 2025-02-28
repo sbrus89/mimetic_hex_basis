@@ -494,9 +494,6 @@ if not skip_remap:
     print("\nRead exact source field")
     source_exact = Field(source_mesh_filename, source)
 
-    source_res = [s for s in source_mesh_filename.split('_') if "km" in s][0]
-    target_res = [s for s in target_mesh_filename.split('_') if "km" in s][0]
-   
     if use_exact_field: 
         #source_field.set_edge_field(function, source)
         #interp_edges(function, source, source_field, gnomonic)
@@ -510,16 +507,18 @@ if not skip_remap:
         target_exact = Field(target_mesh_filename, target)
         target_exact.set_cell_field(function, target)
 
-    plot_cell_vector_fields(source, source_field, 'interpolated', source, source_exact, 'exact', f'source_cell_field_{source_res}.png')
-    plot_edge_fields(source, source_field, 'interpolated', source, source_exact, 'exact', f'source_edge_field_{source_res}.png')
+    plot_cell_vector_fields(source, source_field, 'interpolated', source, source_exact, 'exact', f'source_cell_field_{source.resolution}.png')
+    plot_edge_fields(source, source_field, 'interpolated', source, source_exact, 'exact', f'source_edge_field_{source.resolution}.png')
 
     remap_edges(source, target, edge_mapping, source_field, target_field, gnomonic)
 
-    plot_edge_fields(target, target_field, 'remapped', target, target_exact, 'exact', f'remapped_edge_field_{source_res}_to_{target_res}.png')
+    plot_edge_fields(target, target_field, 'remapped', target, target_exact, 'exact', f'remapped_edge_field_{source.resolution}_to_{target.resolution}.png')
 
     if use_exact_field:
         rmse = np.sqrt(np.mean(np.square(target_exact.edge - target_field.edge)))
-        print(rmse) 
+        print(f"edge rmse: {rmse}") 
+        max_err = np.max(target_exact.edge - target_field.edge)
+        print(f"edge max: {max_err}")
 
     # Write fields to file
     target_field.write_field('barotropicThicknessFluxDiff', target_field.edge - target_exact.edge)
@@ -551,14 +550,14 @@ field_t.write_field('barotropicThicknessFluxMeridional', target_exact.meridional
 
 
 if use_exact_field:
-    plot_cell_vector_fields(mesh, field_t, 'reconstruction', mesh, target_exact, 'exact' ,f'remapped_cell_field_{source_res}_to_{target_res}.png')
+    plot_cell_vector_fields(mesh, field_t, 'reconstruction', mesh, target_exact, 'exact' ,f'remapped_cell_field_{source.resolution}_to_{target.resolution}.png')
     rmse = np.sqrt(np.mean(np.square(target_exact.zonal - field_t.zonal)))
-    print(rmse)
+    print(f"zonal rmse: {rmse}")
     rmse = np.sqrt(np.mean(np.square(target_exact.meridional - field_t.meridional)))
-    print(rmse)
+    print(f"meridional rmse: {rmse}")
     max_err = np.max(np.abs(target_exact.zonal - field_t.zonal))
-    print(max_err)
+    print(f"zonal max: {max_err}")
     max_err = np.max(np.abs(target_exact.meridional - field_t.meridional))
-    print(max_err)
+    print(f"meridional max: {max_err}")
 else:
     plot_cell_vector_fields(mesh, field_s, 'mimetic', mesh, field_t, 'RBF', 'field.png')

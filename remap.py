@@ -205,7 +205,7 @@ def remap_edges(source, target, edge_mapping, source_field, target_field, gnomon
     #btf_target_mv = M.dot(source_field.edge)
     #print(np.max(np.abs(target_field.edge - btf_target_mv)))
 
-    ds = nc4.Dataset("weight_file.nc", "w")
+    ds = nc4.Dataset(f"weight_file_{source.resolution}_to_{target.resolution}.nc", "w")
     n_s = ds.createDimension("n_s", m)
     n_a = ds.createDimension("n_a", source.nEdges)
     n_b = ds.createDimension("n_b", target.nEdges)

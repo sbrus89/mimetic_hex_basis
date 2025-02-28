@@ -9,6 +9,10 @@ class Mesh:
 
         self.mesh_filename = mesh_filename
 
+        if mesh_filename.find('km') == -1:
+            print('mesh_filename does not contain km')
+        self.resolution = [s for s in mesh_filename.split('_') if "km" in s][0]
+
         self.lonVertex = nc_mesh.variables['lonVertex'][:]
         self.latVertex = nc_mesh.variables['latVertex'][:]
         self.lonEdge = nc_mesh.variables['lonEdge'][:]
@@ -16,9 +20,10 @@ class Mesh:
         self.lonCell = nc_mesh.variables['lonCell'][:]
         self.latCell = nc_mesh.variables['latCell'][:]
 
-        self.lonVertex[self.lonVertex > np.pi] = self.lonVertex[self.lonVertex > np.pi] - 2.0*np.pi
-        self.lonCell[self.lonCell > np.pi] = self.lonCell[self.lonCell > np.pi] - 2.0*np.pi
-        self.lonEdge[self.lonEdge > np.pi] = self.lonEdge[self.lonEdge > np.pi] - 2.0*np.pi
+        if np.max(self.lonCell) > np.pi:
+            self.lonVertex[self.lonVertex > np.pi] = self.lonVertex[self.lonVertex > np.pi] - 2.0*np.pi
+            self.lonCell[self.lonCell > np.pi] = self.lonCell[self.lonCell > np.pi] - 2.0*np.pi
+            self.lonEdge[self.lonEdge > np.pi] = self.lonEdge[self.lonEdge > np.pi] - 2.0*np.pi
 
         self.cellsOnEdge = nc_mesh.variables['cellsOnEdge'][:]
         self.edgesOnCell = nc_mesh.variables['edgesOnCell'][:]
