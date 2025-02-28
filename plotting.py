@@ -108,9 +108,9 @@ def plot_cell_vector_fields(mesh1, field1, label1, mesh2, field2, label2, fig_na
     xx, yy = np.meshgrid(x,y)
     xy = np.vstack((xx.ravel(), yy.ravel())).T
 
-    tree = KDTree(xy)
     pts = np.vstack((mesh1.lonCell.ravel(), mesh1.latCell.ravel())).T
-    d, idx = tree.query(pts)
+    tree = KDTree(pts)
+    d, idx = tree.query(xy)
 
     ax = fig.add_subplot(rows, cols, k)
     mag1 = np.sqrt(field1.zonal**2 + field1.meridional**2)
@@ -133,7 +133,9 @@ def plot_cell_vector_fields(mesh1, field1, label1, mesh2, field2, label2, fig_na
     k = k + 1 
     
     pts = np.vstack((mesh2.lonCell.ravel(), mesh2.latCell.ravel())).T
-    d, idx = tree.query(pts)
+    tree = KDTree(pts)
+    d, idx = tree.query(xy)
+
     ax = fig.add_subplot(rows, cols, k)
     mag2 = np.sqrt(field2.zonal**2 + field2.meridional**2)
     cf = ax.tricontourf(mesh2.lonCell, mesh2.latCell, mag2, levels=mlevels, extend='max')
