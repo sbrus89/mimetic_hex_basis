@@ -23,7 +23,7 @@ def interp_edges(function, target, target_field, gnomonic=True):
     progress_bar = ProgressBar(widgets=widgets,
                                maxval=target.nEdges).start()
     
-    t, w_gp = np.polynomial.legendre.leggauss(5)
+    t, w_gp = np.polynomial.legendre.leggauss(25)
     t = np.expand_dims(t, axis=1)
 
     target_field.edge = np.zeros((target.nEdges))
