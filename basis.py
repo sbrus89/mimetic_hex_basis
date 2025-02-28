@@ -116,6 +116,66 @@ def vector_basis(n, i, v, phi, norm_factor=1.0):
 
     return Phix/norm_factor, Phiy/norm_factor
 
+def vector_basis_test(n, i, v, phi, t, w_gp, ds, nu, nv, norm_factor=1.0):
+
+    A = np.zeros((2*n,n))
+    f = np.zeros((2*n))
+    M = np.zeros((n,n))
+    g = np.zeros((n))
+    AA = np.zeros((2*n,2*n))
+    
+    alpha = np.zeros((n))
+    beta = np.zeros((n))
+    for j in range(n):
+
+        jp1 = (j+1) % n
+        jp2 = (j+2) % n
+        jm1 = (j-1) % n
+
+        phi1_int = np.sum(w_gp*(0.5*(1.0-t[:,0]))*ds[j,:])
+        phi2_int = np.sum(w_gp*(0.5*(1.0+t[:,0]))*ds[j,:])
+        den =       phi1_int*((v[j  ,0]-v[j-1,0])*nu[j] + (v[j,  1]-v[j-1,1])*nv[j])
+        alpha[j] = -phi2_int*((v[jp1,0]-v[jp2,0])*nu[j] + (v[jp1,1]-v[jp2,1])*nv[j])/den
+        beta[j] = 1.0/den
+
+        A[2*j,j]     = alpha[j]*(v[j,0]-v[j-1,0]) 
+        A[2*j,jm1]   =          (v[j,0]-v[jp1,0]) 
+        f[2*j] =   1.0 - beta[j]*(v[j,0]-v[j-1,0])
+        A[2*j+1,j]   = alpha[j]*(v[j,1]-v[j-1,1])
+        A[2*j+1,jm1] =          (v[j,1]-v[jp1,1])
+        f[2*j+1] = 1.0 - beta[j]*(v[j,1]-v[j-1,1])
+
+        M[j,j] = alpha[j]*(v[j,0]-v[j-1,0])
+        M[j,jm1] =  (v[j,0]-v[jp1,0])
+        g[j] = 1.0 - beta[j]*(v[j,0]-v[j-1,0])
+
+        #AA[j,  j]     = (v[j,0]-v[j-1,0]) 
+        #AA[j,  n+jm1] = (v[j,0]-v[jp1,0]) 
+        #AA[n+j,j]     = (v[j,1]-v[j-1,1])
+        #AA[n+j,n+jm1] = (v[j,1]-v[jp1,1])
+        #f[j] = 1.0
+        #f[n+j] = 1.0
+        
+
+    #b = np.linalg.lstsq(A,f)[0]
+    b = np.linalg.solve(M,g)
+    #a = np.linalg.solve(AA,f)
+    #b = a[n:]
+
+    a = alpha*b + beta  
+
+    ip1 = (i+1) % n     
+    ip2 = (i+2) % n     
+    vix = (v[i,0] - v[i-1,0])
+    viy = (v[i,1] - v[i-1,1])
+    vip1x = (v[ip1,0] - v[ip2,0])
+    vip1y = (v[ip1,1] - v[ip2,1])
+    Phix = a[i]*vix*phi[i,:,:] + b[i]*vip1x*phi[ip1,:,:]
+    Phiy = a[i]*viy*phi[i,:,:] + b[i]*vip1y*phi[ip1,:,:]
+
+    return Phix/norm_factor, Phiy/norm_factor
+
+
 def wachpress_vec(n, v, xx, yy):
 
     npts = xx.size
