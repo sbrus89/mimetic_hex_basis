@@ -75,13 +75,41 @@ def vector_basis(n, i, v, phi, norm_factor=1.0):
 
     vix = (v[i,0] - v[i-1,0])
     viy = (v[i,1] - v[i-1,1])
-    den = (v[i,0]-v[i-1,0])*(v[i,1]-v[ip1,1]) - (v[i,1]-v[i-1,1])*(v[i,0]-v[ip1,0])
-    a = ((v[i,1]-v[ip1,1]) + (v[ip1,0]-v[i,0]))/den
+    vi_mag = np.sqrt(vix**2 + viy**1)
+    #den = (v[i,0]-v[i-1,0])*(v[i,1]-v[ip1,1]) - (v[i,1]-v[i-1,1])*(v[i,0]-v[ip1,0])
+    #a = ((v[i,1]-v[ip1,1]) + (v[ip1,0]-v[i,0]))/den
 
     vip1x = (v[ip1,0] - v[ip2,0])
     vip1y = (v[ip1,1] - v[ip2,1])
-    den = (v[ip1,0]-v[i,0])*(v[ip1,1]-v[ip2,1]) - (v[ip1,1]-v[i,1])*(v[ip1,0]-v[ip2,0])
-    b = ((v[i,1]-v[ip1,1]) + (v[ip1,0]-v[i,0]))/den
+    vip1_mag = np.sqrt(vip1x**2 + vip1y**2)
+    #den = (v[ip1,0]-v[i,0])*(v[ip1,1]-v[ip2,1]) - (v[ip1,1]-v[i,1])*(v[ip1,0]-v[ip2,0])
+    #b = ((v[i,1]-v[ip1,1]) + (v[ip1,0]-v[i,0]))/den
+
+    A = np.zeros((2,2))
+    f = np.ones((2,1))
+
+    #v1_mag = np.sqrt((v[i,0]-v[i-1,0])**2 + (v[i,1]-v[i-1,1])**2)
+    #v2_mag = np.sqrt((v[i,0]-v[ip1,0])**2 + (v[i,1]-v[ip1,1])**2)
+    v1_mag = 1.0
+    v2_mag = 1.0
+    A[0,0] = (v[i,0]-v[i-1,0])/v1_mag; A[0,1] = (v[i,0]-v[ip1,0])/v2_mag;
+    A[1,0] = (v[i,1]-v[i-1,1])/v1_mag; A[1,1] = (v[i,1]-v[ip1,1])/v2_mag;
+
+    x = np.linalg.solve(A,f)
+    a = x[0]
+
+    #v1_mag = np.sqrt((v[ip1,0]-v[i,0])**2 + (v[ip1,1]-v[i,1])**2)
+    #v2_mag = np.sqrt((v[ip1,0]-v[ip2,0])**2 + (v[ip1,1]-v[ip2,1])**2)
+    v1_mag = 1.0
+    v2_mag = 1.0
+    A[0,0] = (v[ip1,0]-v[i,0])/v1_mag; A[0,1] = (v[ip1,0]-v[ip2,0])/v2_mag;
+    A[1,0] = (v[ip1,1]-v[i,1])/v1_mag; A[1,1] = (v[ip1,1]-v[ip2,1])/v2_mag;
+
+    x = np.linalg.solve(A,f)
+    b = x[1]
+
+    #a = 1.0
+    #b = 1.0
      
     Phix = a*vix*phi[i,:,:] + b*vip1x*phi[ip1,:,:]
     Phiy = a*viy*phi[i,:,:] + b*vip1y*phi[ip1,:,:]
