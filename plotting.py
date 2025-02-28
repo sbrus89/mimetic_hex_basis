@@ -247,8 +247,9 @@ class plotReconstruct:
         if cell != self.cell:
             return
 
-    
-        ax = self.fig.add_subplot(4,3,i+1)
+        rows = 4
+        cols = 4 
+        ax = self.fig.add_subplot(rows,cols,i+1)
         ax.scatter(uCell, vCell, marker='o', color='k', alpha=0.5)
         
         Nx = 100
@@ -299,7 +300,7 @@ class plotReconstruct:
             flon = flon.reshape(shape)
             flat = flat.reshape(shape)
              
-            ax = self.fig.add_subplot(4,3,i+2)
+            ax = self.fig.add_subplot(rows,cols,i+2)
             mag_reconstruct = np.sqrt(self.fu**2 + self.fv**2)
             c = ax.contourf(xx, yy, mag_reconstruct)
             cbar = self.fig.colorbar(c)
@@ -309,14 +310,14 @@ class plotReconstruct:
             fflon, fflat = function(lon, lat)
             fflon[~mask] = np.nan
             fflat[~mask] = np.nan
-            ax = self.fig.add_subplot(4,3,i+3)
+            ax = self.fig.add_subplot(rows,cols,i+3)
             mag_exact = np.sqrt(fflon**2 + fflat**2)
             c = ax.contourf(xx, yy, mag_exact)
             cbar = self.fig.colorbar(c)
             ax.quiver(xx[::N,::N],yy[::N,::N],fflon[::N,::N],fflat[::N,::N])
             ax.axis('equal')
 
-            ax = self.fig.add_subplot(4,3,i+4)
+            ax = self.fig.add_subplot(rows,cols,i+4)
             diff = mag_reconstruct - mag_exact
             vrange = np.nanmax(np.abs(diff)) 
             levels = np.linspace(-vrange, vrange, 10)
@@ -325,17 +326,17 @@ class plotReconstruct:
             ax.quiver(xx[::N,::N],yy[::N,::N],flon[::N,::N] - fflon[::N,::N],flat[::N,::N] - fflat[::N,::N])
             ax.axis('equal')
 
-            ax = self.fig.add_subplot(4,3,i+5)
+            ax = self.fig.add_subplot(rows,cols,i+5)
             c = ax.contourf(xx, yy, self.Phix)
             cbar = self.fig.colorbar(c)
             ax.axis('equal')
 
-            ax = self.fig.add_subplot(4,3,i+6)
+            ax = self.fig.add_subplot(rows,cols,i+6)
             c = ax.contourf(xx, yy, self.Phiy)
             cbar = self.fig.colorbar(c)
             ax.axis('equal')
 
-            ax = self.fig.add_subplot(4,3,i+7)
+            ax = self.fig.add_subplot(rows,cols,i+7)
             mag = np.sqrt(self.Phix**2 + self.Phiy**2)
             c = ax.contourf(xx, yy, mag)
             ax.quiver(xx[::N,::N],yy[::N,::N],self.Phix[::N,::N],self.Phiy[::N,::N])
