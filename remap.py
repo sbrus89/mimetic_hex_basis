@@ -91,7 +91,7 @@ def remap_edges(source, target, edge_mapping, source_field, target_field, gnomon
     max_sub_edges = edge_mapping.nb_sub_edges.shape[1]
     max_source_edges = source.edgesOnCell.shape[1]
 
-    data = np.zeros((target.nEdges*max_sub_edges*max_source_edges))
+    data = np.zeros((4*target.nEdges*max_sub_edges*max_source_edges))
     row = np.zeros_like(data, dtype=np.int64)
     col = np.zeros_like(data, dtype=np.int64)
     m = 0
