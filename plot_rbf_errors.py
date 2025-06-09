@@ -9,7 +9,7 @@ lines = ['-', '-', '-']
 #colors = ['tab:blue', 'tab:blue', 'tab:orange', 'tab:green', 'tab:orange', 'tab:green']
 colors = ['tab:blue', 'tab:orange', 'tab:green']
 #order = ['first', None, None, 'second', None, None]
-order = ['first', None, 'second'] 
+order = ['first', None, 'second',None,'third'] 
 
 runs = OrderedDict()
 # Reconstruct at cell center
@@ -80,24 +80,24 @@ runs = OrderedDict()
 
 # 15 quadrature points in remap, center reconstruct
 runs['4km->128km']  = {
-    'edge rmse': np.nan,
-    'edge max': np.nan,
-    'zonal rmse': np.nan,
-    'meridional rmse': np.nan,
-    'zonal max': np.nan,
-    'meridional max': np.nan}
+	'edge rmse': 0.7020444895399857,
+	'edge max': 5.473209102272643,
+	'zonal rmse': 0.017551828204150723,
+	'meridional rmse': 0.011718620225501906,
+	'zonal max': 0.046717776492988916,
+	'meridional max': 0.027672045784650212}
 
 runs['4km->64km'] = {
-    'edge rmse': np.nan,
-    'edge max': np.nan,
-    'zonal rmse': np.nan,
-    'meridional rmse': np.nan,
-    'zonal max': np.nan,
-    'meridional max': np.nan}
+	'edge rmse': 0.5089695829266325,
+	'edge max': 5.5485367706774085,
+	'zonal rmse': 0.0044910427742152655,
+	'meridional rmse': 0.002930915338176544,
+	'zonal max': 0.010701458812085951,
+	'meridional max': 0.008003860549508524}
 
 runs['4km->32km'] = {
-	'edge rmse': 0.3461700295972383,
-	'edge max': 5.508379025683198,
+	'edge rmse': 0.34617002959723825,
+	'edge max': 5.508379025683199,
 	'zonal rmse': 0.0010043080829062996,
 	'meridional rmse': 0.0007235318189643327,
 	'zonal max': 0.0021278019860426767,
@@ -145,7 +145,7 @@ for i, metric in enumerate(error_metrics):
     ax.set_ylabel('error')
 
 
-fig.savefig('errors.png')
+fig.savefig('rbf_errors.png')
 
         
 
