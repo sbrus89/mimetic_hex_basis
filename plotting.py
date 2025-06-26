@@ -2,7 +2,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from shapely.geometry.polygon import Polygon
 from shapely.geometry import Point
-from basis import wachpress_vec, vector_basis
+from basis import wachpress_vec, vector_basis, vector_basis_test
 from coordinates import transform_coordinates_inverse, transform_vector_components_uv_latlon
 from scipy.spatial import KDTree
 
@@ -242,7 +242,7 @@ class plotReconstruct:
         self.fig =  plt.figure(figsize=(16,8))
         self.cell = cell
 
-    def plot_cell_reconstruct(self, cell, n, i, uCell, vCell, uVertex, vVertex, uv, u, v, nu, nv, norm_factor, coef, function, lon0, lat0, gnomonic):
+    def plot_cell_reconstruct(self, cell, n, i, uCell, vCell, uVertex, vVertex, uv, u, v, nu, nv, norm_factor, coef, function, lon0, lat0, gnomonic, ds, t, w_gp):
 
         if cell != self.cell:
             return
@@ -274,7 +274,8 @@ class plotReconstruct:
 
         phi_vec_grid = wachpress_vec(n, uv, xx, yy) 
         phi_vec_grid[:,~mask] = np.nan
-        Phix, Phiy = vector_basis(n, i, uv, phi_vec_grid, norm_factor=norm_factor)
+        #Phix, Phiy = vector_basis(n, i, uv, phi_vec_grid, norm_factor=norm_factor)
+        Phix, Phiy =  vector_basis_test(n, i, uv, phi_vec_grid, t, w_gp, ds, nu, nv)
         cr = np.linspace(0,1.0,10)
         c = ax.contourf(xx, yy, np.sqrt(np.square(Phix)+np.square(Phiy)))
         cbar = self.fig.colorbar(c)

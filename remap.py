@@ -6,7 +6,7 @@ import xarray as xr
 import netCDF4 as nc4
 from progressbar import ProgressBar, Percentage, Bar, ETA, Timer
 
-from basis import wachpress_vec, vector_basis
+from basis import wachpress_vec, vector_basis, vector_basis_test, vector_basis_mimetic
 from coordinates import edge_normal, transform_coordinates_forward, transform_coordinates_inverse, parameterize_integration, transform_vector_components_latlon_uv, transform_vector_components_uv_latlon
 
 from plotting import plotReconstruct, plotRemap, plotInterp
@@ -64,6 +64,7 @@ def interp_edges(function, target, target_field, gnomonic=True):
 
         # compute integral over edge
         L = np.sum(w_gp*ds)
+        target.dvEdge[edge] = L
         integral = np.sum(w_gp*(fu*nu + fv*nv)*ds)
         target_field.edge[edge] = integral/L
 
@@ -84,7 +85,7 @@ def remap_edges(source, target, edge_mapping, source_field, target_field, gnomon
     progress_bar = ProgressBar(widgets=widgets,
                                maxval=target.nEdges).start()
 
-    t, w_gp = np.polynomial.legendre.leggauss(5)
+    t, w_gp = np.polynomial.legendre.leggauss(15)
     t = np.expand_dims(t, axis=1)
 
     target_field.edge = np.zeros((target.nEdges))
@@ -173,7 +174,9 @@ def remap_edges(source, target, edge_mapping, source_field, target_field, gnomon
                 edge_source = source.edgesOnCell[sub_edge_cell,i] - 1
 
                 # evaluate basis functions at quadrature points on edge
-                Phiu, Phiv = vector_basis(n, i, uv, np.expand_dims(phi[:,i,:], -1), norm_factor=1.0)
+                #Phiu, Phiv = vector_basis(n, i, uv, np.expand_dims(phi[:,i,:], -1), norm_factor=1.0)
+                Phiu, Phiv = vector_basis_test(n, i, uv, np.expand_dims(phi[:,i,:], axis=-1), t, w_gp, ds, nu, nv)
+                #Phiu, Phiv = vector_basis_mimetic(n, i, uv, np.expand_dims(phi[:,i,:], -1))
                 Phiu = np.squeeze(Phiu)
                 Phiv = np.squeeze(Phiv)
 
@@ -181,7 +184,9 @@ def remap_edges(source, target, edge_mapping, source_field, target_field, gnomon
                 norm_integral = np.sum(w_gp*(Phiu*nu[i] + Phiv*nv[i])*ds[i,:])
 
                 # compute normalized basis functions at cell centers 
-                Phiu, Phiv = vector_basis(n, i, uv, phi_quad, norm_factor=norm_integral)
+                #Phiu, Phiv = vector_basis(n, i, uv, phi_quad, norm_factor=norm_integral)
+                #Phiu, Phiv = vector_basis(n, i, uv, phi_quad)
+                Phiu, Phiv = vector_basis_test(n, i, uv, phi_quad, t, w_gp, ds, nu, nv, norm_integral)
                 Phiu = np.squeeze(Phiu)
                 Phiv = np.squeeze(Phiv)
 
@@ -247,11 +252,12 @@ def reconstruct_edges_to_centers(mesh, field_source, field_target, gnomonic):
     #cell = 1919
     #cell = 14508
     #cell = 2425
-    cell = 24657
+    #cell = 24657
+    cell = 2254
     plot = plotReconstruct(cell)
-    plot2 = plotReconstruct(22552)
-    plot3 = plotReconstruct(14508)
-    plot4 = plotReconstruct(2425)
+    plot2 = plotReconstruct(835)
+    plot3 = plotReconstruct(1894)
+    plot4 = plotReconstruct(14360)
     for cell in range(mesh.nCells):
 
         # projection center
@@ -284,21 +290,40 @@ def reconstruct_edges_to_centers(mesh, field_source, field_target, gnomonic):
         ds, u, v, w =  parameterize_integration(lon0, lat0, lon1, lat1, lon2, lat2, t, gnomonic)
         phi = wachpress_vec(n, uv, u, v)
 
+
         fu = np.zeros(uCell.shape)
         fv = np.zeros(vCell.shape)
         for i in range(n):
             edge = mesh.edgesOnCell[cell,i] - 1
 
             # evaluate basis functions at edge quadrature points
-            Phiu, Phiv = vector_basis(n, i, uv, np.expand_dims(phi[:,i,:], axis=-1), norm_factor=1.0)
+            #Phiu, Phiv = vector_basis(n, i, uv, np.expand_dims(phi[:,i,:], axis=-1), norm_factor=1.0)
+            Phiu, Phiv = vector_basis_test(n, i, uv, np.expand_dims(phi[:,i,:], axis=-1), t, w_gp, ds, nu, nv)
+            #Phiu, Phiv = vector_basis_mimetic(n, i, uv, np.expand_dims(phi[:,i,:], axis=-1))
             Phiu = np.squeeze(Phiu)
             Phiv = np.squeeze(Phiv)
 
             # compute integral over edge for basis function normalization factor      
             integral = np.sum(w_gp*(Phiu*nu[i] + Phiv*nv[i])*ds[i,:])
 
+            #Phiu, Phiv, a , b = vector_basis_test(n, i, uv, phi_cell, norm_factor=integral)
+            #ip1 = (i+1) % n
+            #ip2 = (i+2) % n
+            ##vi_mag =   np.sqrt((uv[i  ,0]-uv[i-1,0])**2 + (uv[i  ,1]-uv[i-1,1])**2)
+            ##vip1_mag = np.sqrt((uv[ip1,0]-uv[ip2,0])**2 + (uv[ip1,1]-uv[ip2,1])**2)
+            #vi_mag = 1.0
+            #vip1_mag = 1.0 
+            #ffu = 0.5*(1.0-t)*(uv[i,0]-uv[i-1,0])/vi_mag + 0.5*(1.0+t)*(uv[ip1,0]-uv[ip2,0])/vip1_mag
+            #ffv = 0.5*(1.0-t)*(uv[i,1]-uv[i-1,1])/vi_mag + 0.5*(1.0+t)*(uv[ip1,1]-uv[ip2,1])/vip1_mag
+            ##integral2 = np.sum(w_gp*(ffu.T*nu[i] + ffv.T*nv[i])*ds[i,:])
+            #integral2 = ((a*(uv[i,0]-uv[i-1,0])/vi_mag + b*(uv[ip1,0]-uv[ip2,0])/vip1_mag)*nu[i] + (a*(uv[i,1]-uv[i-1,1])/vi_mag + b*(uv[ip1,1]-uv[ip2,1])/vip1_mag)*nv[i])*0.5*np.sum(w_gp*ds[i,:])
+            #print(integral, integral2)
+
             # compute normalized basis functions at cell centers 
-            Phiu, Phiv = vector_basis(n, i, uv, phi_cell, norm_factor=integral)
+            #Phiu, Phiv = vector_basis(n, i, uv, phi_cell, norm_factor=integral)
+            Phiu, Phiv = vector_basis_test(n, i, uv, phi_cell, t, w_gp, ds, nu, nv, integral)
+            #Phiu, Phiv = vector_basis_test(n, i, uv, phi_cell, t, w_gp, ds, nu, nv)
+            #Phiu, Phiv = vector_basis_mimetic(n, i, uv, phi_cell)
 
             # compute reconstruction at cell center
             L = np.sum(w_gp*ds[i,:])
@@ -306,10 +331,10 @@ def reconstruct_edges_to_centers(mesh, field_source, field_target, gnomonic):
             fu = fu + coef*Phiu
             fv = fv + coef*Phiv
 
-            plot.plot_cell_reconstruct(cell, n, i, uCell, vCell, uVertex, vVertex, uv, u, v, nu, nv, integral, coef, function, lon0, lat0, gnomonic)
-            plot2.plot_cell_reconstruct(cell, n, i, uCell, vCell, uVertex, vVertex, uv, u, v, nu, nv, integral, coef, function, lon0, lat0, gnomonic)
-            plot3.plot_cell_reconstruct(cell, n, i, uCell, vCell, uVertex, vVertex, uv, u, v, nu, nv, integral, coef, function, lon0, lat0, gnomonic)
-            plot4.plot_cell_reconstruct(cell, n, i, uCell, vCell, uVertex, vVertex, uv, u, v, nu, nv, integral, coef, function, lon0, lat0, gnomonic)
+            #plot.plot_cell_reconstruct(cell, n, i, uCell, vCell, uVertex, vVertex, uv, u, v, nu, nv, integral, coef, function, lon0, lat0, gnomonic, ds, t, w_gp)
+            #plot2.plot_cell_reconstruct(cell, n, i, uCell, vCell, uVertex, vVertex, uv, u, v, nu, nv, integral, coef, function, lon0, lat0, gnomonic, ds, t, w_gp)
+            #plot3.plot_cell_reconstruct(cell, n, i, uCell, vCell, uVertex, vVertex, uv, u, v, nu, nv, integral, coef, function, lon0, lat0, gnomonic, ds, t, w_gp)
+            #plot4.plot_cell_reconstruct(cell, n, i, uCell, vCell, uVertex, vVertex, uv, u, v, nu, nv, integral, coef, function, lon0, lat0, gnomonic, ds, t, w_gp)
 
         # compute lon lat vector components
         field_target.zonal[cell], field_target.meridional[cell] = transform_vector_components_uv_latlon(lon0, lat0, mesh.lonCell[cell], mesh.latCell[cell], fu[0,0], fv[0,0], gnomonic)

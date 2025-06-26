@@ -7,7 +7,7 @@ from shapely.geometry import Point
 from scipy.sparse import coo_array
 import netCDF4 as nc4
 
-from basis import wachpress, wachpress_vec, vector_basis
+from basis import wachpress, wachpress_vec, vector_basis, grad_wachpress, integrate_cell, vector_basis_mimetic
 from coordinates import edge_normal, parameterize_line, transform_coordinates_forward, transform_coordinates_inverse, parameterize_integration, transform_vector_components_latlon_uv, transform_vector_components_uv_latlon, R
 from remap import interp_edges, remap_edges, reconstruct_edges_to_centers
 from mesh_map_classes import Mesh, Mapping, Field, function
@@ -132,6 +132,14 @@ if not skip_test:
     
         phix[i,:,:] = phi[i,:,:]*(rx[i,:,:] - sx)
         phiy[i,:,:] = phi[i,:,:]*(ry[i,:,:] - sy)
+
+    phix2, phiy2 = grad_wachpress(phi,rx,ry)
+    diffx = np.nanmax(np.abs(phix-phix2))
+    diffy = np.nanmax(np.abs(phiy-phiy2))
+    if diffx > 1e-15 or diffy > 1e-15:
+        print("Watchpress derivatives do not agree")
+        print(diffx,diffy)
+        raise SystemExit(0)
     
     # Plot Wachpress coordinates
     fig,ax = plt.subplots(nrows, ncols, figsize=figsize)
@@ -150,32 +158,56 @@ if not skip_test:
     
     fig.tight_layout()
     plt.savefig('hex.png',bbox_inches='tight')
-    
+
+    #for j in range(n):
+    #    print(j)
+    #    jp1 = (j+1) % n
+    #    jp2 = (j+2) % n
+
+    #    intx_j, inty_j = integrate_cell(j,v)
+    #    intx_jp1, inty_jp1 = integrate_cell(jp1,v)
+
+    #    vjx = (v[j,0] - v[j-1,0])
+    #    vjy = (v[j,1] - v[j-1,1])
+    #    Lj = np.sqrt(vjx**2 + vjy**2)
+
+    #    vjp1x = (v[jp1,0] - v[jp2,0])
+    #    vjp1y = (v[jp1,1] - v[jp2,1])
+    #    Ljp1 = np.sqrt(vjp1x**2 + vjp1y**2)
+
+    #    phix, phiy  = vector_basis_mimetic(n, j, v, phi, coef=True)
+
     ############################################
     # Vector basis functions
-    ############################################
+    #############################################
     
     # Plot vector basis functions
     fig,ax = plt.subplots(nrows, ncols, figsize=figsize)
     ax = ax.reshape(-1)
-    
+   
+    fx = np.zeros_like(xx)
+    fy = np.zeros_like(xx) 
     for i in range(n):
     
         ip1 = (i+1) % n
+        ip2 = (i+2) % n
+        ip3 = (i+3) % n
     
-        Phix, Phiy = vector_basis(n, i, v, phi)
+        #Phix, Phiy = vector_basis(n, i, v, phi)
+        Phix, Phiy = vector_basis_mimetic(n, i, v, phi)
     
         # plot magnitude
-        cr = np.linspace(0,1.0,10)
-        c = ax[i].contourf(xx, yy, np.sqrt(np.square(Phix)+np.square(Phiy)), cr)
+        mag = np.sqrt(np.square(Phix)+np.square(Phiy))
+        cr = np.linspace(0,np.nanmax(mag),10)
+        c = ax[i].contourf(xx, yy, mag, cr)
         cbar = fig.colorbar(c)
     
         # plot vectors
         ax[i].quiver(xx[::N,::N],yy[::N,::N],Phix[::N,::N],Phiy[::N,::N])
     
         ## plot edge normal
-        #ax[i].quiver(0.5*(v[i,0]+v[ip1,0]), 0.5*(v[i,1]+v[ip1,1]), norm[i,0], norm[i,1])
-    
+        ax[i].quiver(0.5*(v[i,0]+v[ip1,0]), 0.5*(v[i,1]+v[ip1,1]), norm[i,0], norm[i,1])
+
         # plot edge lines
         for j in range(n):
             jp1 = (j+1) % n
@@ -186,9 +218,33 @@ if not skip_test:
             ax[i].scatter(v[j,0], v[j,1],color='k')
     
         ax[i].axis('equal')
+
+        fx = fx + Phix
+        fy = fy + Phiy
     
     fig.tight_layout()
     plt.savefig('edge.png',bbox_inches='tight')
+
+    fig = plt.figure(figsize=(12,4))
+    ax = fig.add_subplot(131)
+    c = ax.contourf(xx, yy, fx)
+    cbar = fig.colorbar(c)
+    ax.axis('equal')
+
+    ax = fig.add_subplot(132)
+    c = ax.contourf(xx, yy, fy)
+    cbar = fig.colorbar(c)
+    ax.axis('equal')
+
+    ax = fig.add_subplot(133)
+    mag = np.sqrt(np.square(fx)+np.square(fy))
+    c = ax.contourf(xx, yy, mag)
+    ax.quiver(xx[::N,::N],yy[::N,::N],fx[::N,::N],fy[::N,::N])
+    cbar = fig.colorbar(c)
+    ax.axis('equal')
+    fig.tight_layout()
+    plt.savefig('edge_sum.png',bbox_inches='tight')
+    
     
     # Compute line integral quadrature points
     x = np.zeros((nt-1,n))
@@ -215,10 +271,11 @@ if not skip_test:
         ip2 = (i+2) % n
     
         # Numerical integral along edge
-        Phix, Phiy = vector_basis(n, i, v, phi)
+        #Phix, Phiy = vector_basis(n, i, v, phi)
+        Phix, Phiy = vector_basis_mimetic(n, i, v, phi)
         integral = np.sum((Phix*nx + Phiy*ny)*ds, axis=0)
         integral[integral < 1e-15] = 0.0
-        #print(integral[i])
+        print(integral[i])
     
         # Analytical integral along edge
         xip1 = v[ip1,0]
@@ -232,14 +289,16 @@ if not skip_test:
         yim1 = v[i-1,1]
     
         norm_factors[i]= 0.5*(yip1-yi)*((xi-xim1)+(xip1-xip2)) - 0.5*(xip1-xi)*((yi-yim1)+(yip1-yip2))
-        #print(norm_factors[i])
+        print(norm_factors[i])
        
         # Check between numerical and analytical integrals 
         if abs(integral[i] - norm_factors[i]) > 1e-12:
             print("Edge integration issue")
+        norm_factors[i] = integral[i]
         
         # Integration of normalized functions
-        Phix, Phiy = vector_basis(n, i, v, phi, norm_factors[i])
+        #Phix, Phiy = vector_basis(n, i, v, phi, norm_factors[i])
+        Phix, Phiy = vector_basis_mimetic(n, i, v, phi)
         integral = np.sum((Phix*nx + Phiy*ny)*ds, axis=0)
         integral[abs(integral) < 1e-15] = 0.0
         print(integral)
@@ -264,7 +323,8 @@ if not skip_test:
             ax[i].scatter(v[j,0], v[j,1])
             ax[i].plot([v[j,0], v[jp1,0]], [v[j,1], v[jp1,1]])
     
-        Phix, Phiy = vector_basis(n, i, v, phi, norm_factors[i])
+        #Phix, Phiy = vector_basis(n, i, v, phi, norm_factors[i])
+        Phix, Phiy = vector_basis_mimetic(n, i, v, phi)
     
         dPhix = Phix[:-1,1:]-Phix[:-1,:-1]+Phix[1:,1:]-Phix[1:,:-1]
         dPhiy = Phiy[1:,:-1]-Phiy[:-1,:-1]+Phiy[1:,1:]-Phiy[:-1,1:]
@@ -325,7 +385,8 @@ if not skip_test:
                 ax[i].scatter(v[j,0], v[j,1])
                 ax[i].plot([v[j,0], v[jp1,0]], [v[j,1], v[jp1,1]])
         
-            Phix, Phiy = vector_basis(n, i, v, phi)
+            #Phix, Phiy = vector_basis(n, i, v, phi)
+            Phix, Phiy = vector_basis_mimetic(n, i, v, phi)
         
             ax[i].quiver(xx[::N,::N],yy[::N,::N],Phix[::N,::N],Phiy[::N,::N])
             ax[i].quiver(0.5*(v[i,0]+v[ip1,0]), 0.5*(v[i,1]+v[ip1,1]), norm[i,0], norm[i,1])
@@ -389,7 +450,8 @@ if not skip_test:
                 ax[i].scatter(v[j,0], v[j,1])
                 ax[i].plot([v[j,0], v[jp1,0]], [v[j,1], v[jp1,1]])
         
-            Phix, Phiy = vector_basis(n, i, v, phi, norm_factors[i])
+            #Phix, Phiy = vector_basis(n, i, v, phi, norm_factors[i])
+            Phix, Phiy = vector_basis_mimetic(n, i, v, phi)
         
             dPhix = Phix[:-1,1:]-Phix[:-1,:-1]+Phix[1:,1:]-Phix[1:,:-1]
             dPhiy = Phiy[1:,:-1]-Phiy[:-1,:-1]+Phiy[1:,1:]-Phiy[:-1,1:]
@@ -451,6 +513,7 @@ if not skip_test:
         print("Arc length integration issue")
         raise SystemExit(0)
 
+#raise SystemExit(0)
 
 ############################################
 # Remap MPAS edge field from 16km to 32km 
@@ -467,21 +530,48 @@ if not skip_remap:
     #target_mesh_filename = 'soma_32km_mpas_mesh_with_rbf_weights.nc'
     #edge_information_filename = 'target_edge_iulian.nc'
 
-    #source_mesh_filename = '32km_mesh_culled.nc'
-    #target_mesh_filename = '32km_mesh_culled.nc'
-    #edge_information_filename = 'target_edge_4to32.nc'
+    ###################################################################
+    #source_mesh_filename = '16km_mesh_culled.nc'
+    #target_mesh_filename = '32km_mesh_culled_16to32.nc'
+    #edge_information_filename = 'target_edge_16to32.nc'
+
+    ###################################################################
+    source_mesh_filename = '4km_mesh.nc'
+    target_mesh_filename = '128km_mesh_culled.nc'
+    edge_information_filename = 'target_edge_4to128.nc'
+
+    #source_mesh_filename = '4km_mesh.nc'
+    #target_mesh_filename = '64km_mesh_culled.nc'
+    #edge_information_filename = 'target_edge_4to64.nc'
 
     #source_mesh_filename = '4km_mesh.nc'
     #target_mesh_filename = '32km_mesh_culled.nc'
     #edge_information_filename = 'target_edge_4to32.nc'
 
-    #source_mesh_filename = '16km_mesh_culled.nc'
-    #target_mesh_filename = '32km_mesh_culled_16to32.nc'
-    #edge_information_filename = 'target_edge_16to32.nc'
+    #source_mesh_filename = '4km_mesh.nc'
+    #target_mesh_filename = '16km_mesh_culled.nc'
+    #edge_information_filename = 'target_edge_4to16_iulian.nc'
 
-    source_mesh_filename = '4km_mesh.nc'
-    target_mesh_filename = '16km_mesh_culled.nc'
-    edge_information_filename = 'target_edge_4to16_iulian.nc'
+    ###################################################################
+    #source_mesh_filename = '4km_mesh.nc'
+    #target_mesh_filename = '128km_mesh_culled.nc'
+    #edge_information_filename = 'target_edge_4to128.nc'
+
+    #source_mesh_filename = '8km_mesh_culled.nc'
+    #target_mesh_filename = '128km_mesh_culled.nc'
+    #edge_information_filename = 'target_edge_8to128.nc'
+
+    #source_mesh_filename = '16km_mesh_culled.nc'
+    #target_mesh_filename = '128km_mesh_culled.nc'
+    #edge_information_filename = 'target_edge_16to128.nc'
+
+    #source_mesh_filename = '32km_mesh_culled.nc'
+    #target_mesh_filename = '128km_mesh_culled.nc'
+    #edge_information_filename = 'target_edge_32to128.nc'
+
+    #source_mesh_filename = '64km_mesh_culled.nc'
+    #target_mesh_filename = '128km_mesh_culled.nc'
+    #edge_information_filename = 'target_edge_64to128.nc'
    
     # Create mesh, mapping, and field objects 
     source = Mesh(source_mesh_filename)
@@ -491,21 +581,19 @@ if not skip_remap:
     source_field = Field(source_mesh_filename, source)
     print("\nRead target field")
     target_field = Field(target_mesh_filename, target) 
-    print("\nRead exact source field")
-    source_exact = Field(source_mesh_filename, source)
 
     if use_exact_field: 
-        #source_field.set_edge_field(function, source)
-        #interp_edges(function, source, source_field, gnomonic)
-        #source_exact.edge = source_field.edge
+        print("\nInitialize exact target field")
+        source_exact = Field(source_mesh_filename, source)
+        #interp_edges(function, source, source_exact, gnomonic)
         source_exact.set_cell_field(function, source)
 
-        #reconstruct_edges_to_centers(source, source_field, source_field, gnomonic)
-
-        #target_field.set_edge_field(function, target)
-        print("\nRead exact target field")
+        print("\nInitialize exact source field")
         target_exact = Field(target_mesh_filename, target)
+        interp_edges(function, target, target_exact, gnomonic)
         target_exact.set_cell_field(function, target)
+
+        #reconstruct_edges_to_centers(source, source_field, source_field, gnomonic)
 
     plot_cell_vector_fields(source, source_field, 'interpolated', source, source_exact, 'exact', f'source_cell_field_{source.resolution}.png')
     plot_edge_fields(source, source_field, 'interpolated', source, source_exact, 'exact', f'source_edge_field_{source.resolution}.png')
@@ -516,9 +604,23 @@ if not skip_remap:
 
     if use_exact_field:
         rmse = np.sqrt(np.mean(np.square(target_exact.edge - target_field.edge)))
+        #rmse = np.sqrt((np.square(target_exact.edge - target_field.edge)*target.dvEdge)/np.sum(target.dvEdge))
         print(f"edge rmse: {rmse}") 
         max_err = np.max(target_exact.edge - target_field.edge)
         print(f"edge max: {max_err}")
+
+        diff = np.zeros((target.nCells))
+        for cell in range(target.nCells):
+            n = target.nEdgesOnCell[cell]
+            sum_target = 0.0
+            sum_exact = 0.0
+            for j in range(n):
+                edge = target.edgesOnCell[cell,j] - 1
+                sum_exact  = sum_exact  - target.edgeSignOnCell[cell,j]*target_exact.edge[edge]*target.dvEdge[edge]
+                sum_target = sum_target - target.edgeSignOnCell[cell,j]*target_field.edge[edge]*target.dvEdge[edge]
+            diff[cell] = sum_exact - sum_target
+            print(sum_exact, sum_target, diff[cell])
+        print(f"max cell-sum error: {np.max(diff)}")
 
     # Write fields to file
     target_field.write_field('barotropicThicknessFluxDiff', target_field.edge - target_exact.edge)

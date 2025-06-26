@@ -1,6 +1,8 @@
 import netCDF4 as nc4
 import numpy as np
 
+R = 6371220.0
+
 class Mesh:
 
     def __init__(self, mesh_filename):
@@ -32,6 +34,10 @@ class Mesh:
         self.verticesOnEdge = nc_mesh.variables['verticesOnEdge'][:]
         self.dvEdge = nc_mesh.variables['dvEdge'][:]
         self.angleEdge = nc_mesh.variables['angleEdge'][:]
+
+        # Off center point to evaluate reconstruction
+        #self.lonCell = 0.5*(self.lonCell + self.lonEdge[self.edgesOnCell[:,0]-1])
+        #self.latCell = 0.5*(self.latCell + self.latEdge[self.edgesOnCell[:,0]-1])
 
         self.nEdges = self.lonEdge.size
         self.nCells = self.lonCell.size
